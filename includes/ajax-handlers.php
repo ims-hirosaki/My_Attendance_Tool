@@ -537,7 +537,41 @@ function mat_get_logs_handler() {
 // =========================================================
 //  打刻編集（社員側）
 // =========================================================
+add_action( 'wp_ajax_mat_admin_delete_log', 'mat_admin_delete_log_handler' );
 
+function mat_admin_delete_log_handler() {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_send_json_error( '権限がありません。' );
+    }
+    check_ajax_referer( 'mat_admin_nonce', 'nonce' );
+
+    global $wpdb;
+
+    $id = isset( $_POST['id'] ) ? intval( $_POST['id'] ) : 0;
+    if ( $id <= 0 ) {
+        wp_send_json_error( 'IDが不正です。' );
+    }
+
+    // 対象レコードの存在確認
+    $log = $wpdb->get_row( $wpdb->prepare(
+        "SELECT id FROM " . MAT_LOG_TABLE . " WHERE id = %d", $id
+    ) );
+    if ( ! $log ) {
+        wp_send_json_error( '対象レコードが見つかりません。' );
+    }
+
+    $deleted = $wpdb->delete(
+        MAT_LOG_TABLE,
+        array( 'id' => $id ),
+        array( '%d' )
+    );
+
+    if ( $deleted === false ) {
+        wp_send_json_error( '削除失敗: ' . $wpdb->last_error );
+    }
+
+    wp_send_json_success( array( 'deleted_id' => $id ) );
+}
 add_action( 'wp_ajax_mat_edit_log',        'mat_edit_log_handler' );
 add_action( 'wp_ajax_nopriv_mat_edit_log', 'mat_edit_log_handler' );
 

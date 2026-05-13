@@ -339,10 +339,16 @@ function mat_history_page_render() {
 
             <p id="edit-error" style="color:#d63638; margin:10px 0 0; display:none; font-size:.9em;"></p>
 
-            <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
-                <button type="button" id="edit-cancel" class="button">キャンセル</button>
-                <button type="button" id="edit-save" class="button button-primary">💾 保存する</button>
-            </div>
+<div style="margin-top:20px; display:flex; gap:10px; justify-content:space-between; align-items:center;">
+    <button type="button" id="edit-delete" class="button"
+        style="color:#d63638; border-color:#d63638;">
+        🗑️ 削除
+    </button>
+    <div style="display:flex; gap:10px;">
+        <button type="button" id="edit-cancel" class="button">キャンセル</button>
+        <button type="button" id="edit-save" class="button button-primary">💾 保存する</button>
+    </div>
+</div>
         </div>
     </div>
 
@@ -542,6 +548,40 @@ function mat_history_page_render() {
         $(document).on('keydown', function(e) {
             if (e.key === 'Escape') { $('#mat-edit-modal').hide(); }
         });
+
+        // ---- 削除ボタン ----
+$('#edit-delete').on('click', function () {
+    if ( ! currentId ) return;
+
+    if ( ! confirm(
+        '【確認】この打刻レコードを削除しますか？\n\n' +
+        'この操作は元に戻せません。'
+    ) ) return;
+
+    var $btn = $(this).prop('disabled', true).text('削除中...');
+    $('#edit-error').hide();
+
+    $.post( ajaxurl, {
+        action : 'mat_admin_delete_log',
+        id     : currentId,
+        nonce  : nonce,
+    }, function ( res ) {
+        $btn.prop('disabled', false).text('🗑️ 削除');
+        if ( res.success ) {
+            // テーブル行をフェードアウトして削除
+            $('tr[data-id="' + currentId + '"]').fadeOut( 300, function () {
+                $(this).remove();
+            });
+            $('#mat-edit-modal').hide();
+            currentId = null;
+        } else {
+            $('#edit-error').text( res.data ).show();
+        }
+    }).fail(function () {
+        $btn.prop('disabled', false).text('🗑️ 削除');
+        $('#edit-error').text('通信エラーが発生しました。').show();
+    });
+});
 
         $('#edit-save').on('click', function() {
             if (!currentId) return;
