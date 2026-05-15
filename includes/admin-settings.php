@@ -7,8 +7,8 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 add_action( 'admin_menu', 'mat_register_admin_menu' );
 function mat_register_admin_menu() {
     add_menu_page(
-        '勤怠管理ツール',
-        '勤怠管理',
+        '打刻ツール',
+        '打刻ツール',
         'manage_options',
         'my-attendance-settings',
         'mat_history_page_render',
@@ -17,8 +17,8 @@ function mat_register_admin_menu() {
     );
     add_submenu_page(
         'my-attendance-settings',
-        '勤怠履歴',
-        '勤怠履歴',
+        '打刻',
+        '打刻',
         'manage_options',
         'my-attendance-settings',
         'mat_history_page_render'
@@ -32,10 +32,10 @@ add_action( 'admin_enqueue_scripts', 'mat_admin_enqueue' );
 function mat_admin_enqueue( $hook ) {
     $mat_pages = array(
         'toplevel_page_my-attendance-settings',
-        '勤怠管理_page_my-attendance-settings',
-        '勤怠管理_page_mat-auth-management',
-        '勤怠管理_page_mat-settings',
-        '勤怠管理_page_mat-test-data',
+        '打刻管理_page_my-attendance-settings',
+        '打刻管理_page_mat-auth-management',
+        '打刻管理_page_mat-settings',
+        '打刻管理_page_mat-test-data',
     );
     if ( ! in_array( $hook, $mat_pages, true ) ) return;
 
@@ -155,7 +155,7 @@ function mat_history_page_render() {
     }
     ?>
     <div class="wrap">
-        <h1>📋 従業員勤怠履歴</h1>
+        <h1>📋 従業員打刻履歴</h1>
 
         <div class="card" style="max-width:100%; margin-top:20px; padding:15px;">
 
