@@ -9,6 +9,9 @@ jQuery(document).ready(function ($) {
     var allowLogEdit = matAjax.allowLogEdit === '1';
     var showPaidLeave = matAjax.showPaidLeaveRequest === '1';
 
+    // ★ 二重送信防止用フラグ
+    var isSubmitting = false;
+
     var session = {
         empMasterId: 0,
         employeeCode: '',
@@ -48,6 +51,14 @@ jQuery(document).ready(function ($) {
     }
 
     function clearError(id) {
+        $('#' + id).text('').hide();
+    }
+
+    function setSuccess(id, msg) {
+        $('#' + id).text(msg || '').show();
+    }
+
+    function clearSuccess(id) {
         $('#' + id).text('').hide();
     }
 
@@ -284,13 +295,17 @@ jQuery(document).ready(function ($) {
         $('#mat-employee-code').val('');
         $('#mat-note').val('');
         $('#mat-paid-leave-date').val('');
+        $('#mat-holiday-date').val('');
         showSection('mat-section-code');
     });
 
     // =========================================================
-    //  打刻（出勤・退勤・休憩）
+    //  打刻処理（出勤・退勤・休憩）
     // =========================================================
-    $('.mat-punch-btn').on('click', function () {
+    $(document).on('click', '.mat-punch-btn', function () {
+        // ★ 二重送信ガード
+        if (isSubmitting) return;
+
         var label = $(this).data('label');
         var note = $('#mat-note').val();
 
@@ -315,8 +330,14 @@ jQuery(document).ready(function ($) {
         var $btn = $(this);
         btnLoading($btn, true);
 
+        // ★ 処理フラグを立てる
+        isSubmitting = true;
+
         $.post(ajaxurl, postData, function (res) {
             btnLoading($btn, false);
+            // ★ 処理完了でフラグを倒す
+            isSubmitting = false;
+
             if (res.success) {
                 $('#mat-note').val('');
                 renderLogs(res.data);
@@ -325,6 +346,8 @@ jQuery(document).ready(function ($) {
             }
         }).fail(function () {
             btnLoading($btn, false);
+            // ★ 通信エラー時もフラグを倒す
+            isSubmitting = false;
             alert('通信エラーが発生しました。');
         });
     });
@@ -333,29 +356,38 @@ jQuery(document).ready(function ($) {
     //  打刻ボタンの活性状態を更新
     // =========================================================
     function updatePunchButtons(logs) {
+        // サイト日付（WordPress）と各行の日付で判定。ブラウザのローカル日付だけだと TZ ずれで退勤が無効のままになる。
+        var todayYmd = matAjax.todayYmd || '';
         var now = new Date();
-        var mm = String(now.getMonth() + 1).padStart(2, '0');
-        var dd = String(now.getDate()).padStart(2, '0');
-        var todayStr = mm + '/' + dd;
+        var legacyToday = String(now.getMonth() + 1).padStart(2, '0') + '/' + String(now.getDate()).padStart(2, '0');
 
         var hasClockin = false;
         var hasClockout = false;
 
         $.each(logs, function (_, row) {
-            if (row.date && row.date.indexOf(todayStr) === 0) {
-                if (row.in && row.in !== '-') hasClockin = true;
-                if (row.out && row.out !== '-') hasClockout = true;
+            var isToday = false;
+            if (todayYmd && row.date_ymd) {
+                isToday = row.date_ymd === todayYmd;
+            } else if (row.date) {
+                isToday = row.date.indexOf(legacyToday) === 0;
             }
+            if (!isToday) return;
+
+            if (row.in && row.in !== '-' && row.in !== '休日') hasClockin = true;
+            if (row.out && row.out !== '-') hasClockout = true;
         });
 
-        var $btnIn = $('[data-label="出勤"]');
+        var $btnIn = $('.mat-wrap [data-label="出勤"]');
+        var $btnOut = $('.mat-wrap [data-label="退勤"]');
+
+        // 出勤ボタン制御
         if (hasClockin) {
             $btnIn.prop('disabled', true).text('出勤済み').css('opacity', '0.5');
         } else {
             $btnIn.prop('disabled', false).text('出勤').css('opacity', '1');
         }
 
-        var $btnOut = $('[data-label="退勤"]');
+        // 退勤ボタン制御
         if (!hasClockin || hasClockout) {
             $btnOut.prop('disabled', true)
                 .text(hasClockout ? '退勤済み' : '退勤')
@@ -364,6 +396,55 @@ jQuery(document).ready(function ($) {
             $btnOut.prop('disabled', false).text('退勤').css('opacity', '1');
         }
     }
+
+    // =========================================================
+    //  ★ 休日登録
+    // =========================================================
+    $(document).on('click', '#mat-btn-register-holiday', function () {
+        var holidayDate = $('#mat-holiday-date').val();
+        clearError('mat-error-holiday');
+        clearSuccess('mat-success-holiday');
+
+        if (!holidayDate) {
+            setError('mat-error-holiday', '日付を選択してください。');
+            return;
+        }
+
+        if (!session.empMasterId) {
+            setError('mat-error-holiday', 'ログインしてください。');
+            return;
+        }
+
+        var $btn = $(this);
+        btnLoading($btn, true);
+
+        $.post(ajaxurl, {
+            action: 'mat_register_holiday',
+            emp_master_id: session.empMasterId,
+            employee_code: session.employeeCode,
+            holiday_date: holidayDate,
+            nonce: nonce,
+        }, function (res) {
+            btnLoading($btn, false);
+            if (res.success) {
+                $('#mat-holiday-date').val('');
+                setSuccess('mat-success-holiday', '休日として登録しました。');
+                // 登録した月のログを表示中なら即時反映
+                var registeredMonth = holidayDate.substring(0, 7);
+                var viewingMonth = $('#mat-view-month').val() || getCurrentYearMonth();
+                if (registeredMonth === viewingMonth) {
+                    renderLogs(res.data);
+                }
+                // 3秒後に成功メッセージを消す
+                setTimeout(function () { clearSuccess('mat-success-holiday'); }, 3000);
+            } else {
+                setError('mat-error-holiday', 'エラー: ' + res.data);
+            }
+        }).fail(function () {
+            btnLoading($btn, false);
+            setError('mat-error-holiday', '通信エラーが発生しました。');
+        });
+    });
 
     // =========================================================
     //  有給希望申請ボタン
@@ -399,6 +480,7 @@ jQuery(document).ready(function ($) {
             setError('mat-error-paid-leave', '通信エラーが発生しました。');
         });
     });
+
     $('#mat-paid-leave-date').on('change', function () {
         if ($(this).val()) {
             $(this).attr('data-has-value', '1');
@@ -406,6 +488,7 @@ jQuery(document).ready(function ($) {
             $(this).removeAttr('data-has-value');
         }
     });
+
     // =========================================================
     //  有給申請一覧の取得・表示
     // =========================================================
@@ -447,7 +530,6 @@ jQuery(document).ready(function ($) {
 
         var html = '';
         $.each(requests, function (_, r) {
-            // ★ mat-status-badge を必ず付与し、さらに状態別クラスを追加する
             var cls = statusClass[r.status_key] || '';
             html += '<tr>';
             html += '<td>' + esc(r.request_date) + '</td>';
@@ -458,13 +540,14 @@ jQuery(document).ready(function ($) {
 
         $('#mat-paid-leave-body').html(html);
     }
+
     // =========================================================
     //  打刻履歴の取得・表示
     // =========================================================
     function loadLogs() {
         var month = $('#mat-view-month').val() || getCurrentYearMonth();
         $('#mat-history-body').html(
-            '<tr><td colspan="6" class="mat-loading">読み込み中...</td></tr>'
+            '<tr><td colspan="7" class="mat-loading">読み込み中...</td></tr>'
         );
 
         $.post(ajaxurl, {
@@ -477,16 +560,19 @@ jQuery(document).ready(function ($) {
                 renderLogs(res.data);
             } else {
                 $('#mat-history-body').html(
-                    '<tr><td colspan="6" style="text-align:center;padding:16px;color:#999;">取得できませんでした。</td></tr>'
+                    '<tr><td colspan="7" style="text-align:center;padding:16px;color:#999;">取得できませんでした。</td></tr>'
                 );
             }
         });
     }
 
     function renderLogs(data) {
+        if (data && data.today_ymd) {
+            matAjax.todayYmd = data.today_ymd;
+        }
         if (!data.logs || data.logs.length === 0) {
             $('#mat-history-body').html(
-                '<tr><td colspan="6" class="mat-loading">データがありません。</td></tr>'
+                '<tr><td colspan="7" class="mat-loading">データがありません。</td></tr>'
             );
             updatePunchButtons([]);
             return;
@@ -495,28 +581,46 @@ jQuery(document).ready(function ($) {
         var html = '';
 
         $.each(data.logs, function (_, row) {
-            html += '<tr data-id="' + row.id + '">';
+            // 休日行はグレー背景で表示
+            var rowStyle = row.is_holiday ? ' style="background:#f5f5f5;color:#999;"' : '';
+            html += '<tr data-id="' + row.id + '"' + rowStyle + '>';
             html += '<td>' + esc(row.date) + '</td>';
-            html += '<td>' + esc(row.in) + '</td>';
-            html += '<td>' + esc(row.out) + '</td>';
-            html += '<td>' + esc(row.break) + '</td>';
 
-            var notes = Array.isArray(row.notes) ? row.notes.join(' / ') : '';
-            html += '<td style="text-align:left;">' + esc(notes) + '</td>';
-
-            if (allowLogEdit) {
-                if (row.can_edit) {
-                    html += '<td>'
-                        + '<button class="mat-btn-sm mat-edit-btn"'
-                        + ' data-id="' + row.id + '"'
-                        + ' data-in="' + esc(row.in === '-' ? '' : row.in) + '"'
-                        + ' data-out="' + esc(row.out === '-' ? '' : row.out) + '"'
-                        + ' data-break="' + esc(row.break === '-' ? '00:00' : row.break) + '"'
-                        + ' data-notes="' + esc(notes) + '"'
-                        + '>編集</button>'
-                        + '</td>';
-                } else {
+            if (row.is_holiday) {
+                // 出勤〜備考は空表示、休日列に表示
+                html += '<td>-</td>';
+                html += '<td>-</td>';
+                html += '<td>-</td>';
+                html += '<td>-</td>';
+                html += '<td style="text-align:center;font-size:.9em;">🗓 休日</td>';
+                if (allowLogEdit) {
                     html += '<td style="color:#ccc;font-size:.8em;">-</td>';
+                }
+            } else {
+                html += '<td>' + esc(row.in) + '</td>';
+                html += '<td>' + esc(row.out) + '</td>';
+                html += '<td>' + esc(row.break) + '</td>';
+
+                var notes = Array.isArray(row.notes) ? row.notes.join(' / ') : '';
+                html += '<td style="text-align:left;">' + esc(notes) + '</td>';
+
+                // 休日列は通常行では空
+                html += '<td style="color:#ccc;font-size:.8em;">-</td>';
+
+                if (allowLogEdit) {
+                    if (row.can_edit) {
+                        html += '<td>'
+                            + '<button class="mat-btn-sm mat-edit-btn"'
+                            + ' data-id="' + row.id + '"'
+                            + ' data-in="' + esc(row.in === '-' ? '' : row.in) + '"'
+                            + ' data-out="' + esc(row.out === '-' ? '' : row.out) + '"'
+                            + ' data-break="' + esc((row.break === '-' || row.break === '00:00') ? '' : row.break) + '"'
+                            + ' data-notes="' + esc(notes) + '"'
+                            + '>編集</button>'
+                            + '</td>';
+                    } else {
+                        html += '<td style="color:#ccc;font-size:.8em;">-</td>';
+                    }
                 }
             }
 
@@ -586,6 +690,30 @@ jQuery(document).ready(function ($) {
             $(this).fadeOut(150);
             editTargetId = null;
         }
+    });
+    $('#mat-edit-delete').on('click', function () {
+        if (!editTargetId) return;
+
+        if (!confirm('この日のデータを完全に削除しますか？\n重複してしまった場合などに実行してください。')) return;
+
+        var $btn = $(this);
+        btnLoading($btn, true);
+
+        $.post(ajaxurl, {
+            action: 'mat_delete_log',
+            id: editTargetId,
+            emp_master_id: session.empMasterId,
+            nonce: nonce,
+        }, function (res) {
+            btnLoading($btn, false);
+            if (res.success) {
+                $('#mat-edit-modal').fadeOut(150);
+                editTargetId = null;
+                loadLogs();
+            } else {
+                alert('削除に失敗しました: ' + res.data);
+            }
+        });
     });
 
 });

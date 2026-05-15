@@ -111,6 +111,9 @@ function mat_attendance_update_handler() {
 
     $emp = emp_get_employee_by_code( $employee_code );
     if ( ! $emp ) wp_send_json_error( '社員情報が見つかりません。' );
+    if ( (int) $emp->id !== $emp_master_id ) {
+        wp_send_json_error( '社員情報が一致しません。ログアウトしてから再度お試しください。' );
+    }
 
     // ★ 重複チェック：その日のレコード(枠)が既にあるか検索
     $existing_id = $wpdb->get_var( $wpdb->prepare(
@@ -121,15 +124,16 @@ function mat_attendance_update_handler() {
     if ( $label === '出勤' ) {
         if ( $existing_id ) wp_send_json_error( '本日はすでに打刻データまたは休日の記録があります。やり直す場合は「削除」してください。' );
         
-        $wpdb->insert( MAT_LOG_TABLE, array(
+        $ok = $wpdb->insert( MAT_LOG_TABLE, array(
             'registered_user_id'   => $emp_master_id,
             'registered_user_name' => $emp->name,
             'employee_code'        => $employee_code,
             'item_name'            => "出勤: " . current_time('H:i'),
             'timestamp'            => current_time('Y-m-d H:i:s'),
-            'ip_address'           => $_SERVER['REMOTE_ADDR'],
-            'user_agent'           => $_SERVER['HTTP_USER_AGENT']
-        ) );
+        ), array( '%d', '%s', '%s', '%s', '%s' ) );
+        if ( ! $ok ) {
+            wp_send_json_error( '打刻の保存に失敗しました。管理者にお問い合わせください。' );
+        }
     } else {
         if ( ! $existing_id ) wp_send_json_error( '本日のデータが見つかりません。先に出勤を打刻してください。' );
         
@@ -140,12 +144,18 @@ function mat_attendance_update_handler() {
         $new_item = $log->item_name . ' | ' . $label . ": " . $time_val;
         if ( ! empty( $note ) ) $new_item .= " | 備考: " . $note;
 
-        $wpdb->update( MAT_LOG_TABLE, 
-            array( 'item_name' => $new_item, 'ip_address' => $_SERVER['REMOTE_ADDR'] ), 
-            array( 'id' => $existing_id ) 
+        $ok = $wpdb->update(
+            MAT_LOG_TABLE,
+            array( 'item_name' => $new_item ),
+            array( 'id' => $existing_id ),
+            array( '%s' ),
+            array( '%d' )
         );
+        if ( $ok === false ) {
+            wp_send_json_error( '打刻の保存に失敗しました。管理者にお問い合わせください。' );
+        }
     }
-    wp_send_json_success( mat_get_grouped_data( $emp_master_id, date( 'Y-m' ) ) );
+    wp_send_json_success( mat_get_grouped_data( $emp_master_id, current_time( 'Y-m' ) ) );
 }
 
 // 休日登録 (既存データを消して上書き)
@@ -160,18 +170,28 @@ function mat_register_holiday_handler() {
 
     $emp = emp_get_employee_by_code( $employee_code );
     if ( ! $emp ) wp_send_json_error( '社員が見つかりません。' );
+    if ( (int) $emp->id !== $emp_master_id ) {
+        wp_send_json_error( '社員情報が一致しません。ログアウトしてから再度お試しください。' );
+    }
 
     // ★ 強制上書き：その日の既存データを削除
     $wpdb->query( $wpdb->prepare( "DELETE FROM " . MAT_LOG_TABLE . " WHERE registered_user_id = %d AND DATE(timestamp) = %s", $emp_master_id, $holiday_date ) );
     
-    $wpdb->insert( MAT_LOG_TABLE, array(
-        'registered_user_id'   => $emp_master_id,
-        'registered_user_name' => $emp->name,
-        'employee_code'        => $employee_code,
-        'item_name'            => '休日',
-        'timestamp'            => $holiday_date . ' 00:00:00',
-    ) );
-    wp_send_json_success( mat_get_grouped_data( $emp_master_id, substr($holiday_date, 0, 7) ) );
+    $ok = $wpdb->insert(
+        MAT_LOG_TABLE,
+        array(
+            'registered_user_id'   => $emp_master_id,
+            'registered_user_name' => $emp->name,
+            'employee_code'        => $employee_code,
+            'item_name'            => '休日',
+            'timestamp'            => $holiday_date . ' 00:00:00',
+        ),
+        array( '%d', '%s', '%s', '%s', '%s' )
+    );
+    if ( ! $ok ) {
+        wp_send_json_error( '休日の登録に失敗しました。管理者にお問い合わせください。' );
+    }
+    wp_send_json_success( mat_get_grouped_data( $emp_master_id, substr( $holiday_date, 0, 7 ) ) );
 }
 
 // 打刻削除
@@ -205,7 +225,7 @@ add_action( 'wp_ajax_nopriv_mat_get_logs', 'mat_get_logs_handler' );
 function mat_get_logs_handler() {
     check_ajax_referer( 'mat_nonce', 'nonce' );
     $emp_id = intval( $_POST['emp_master_id'] );
-    $month  = sanitize_text_field( $_POST['month'] ?? date('Y-m') );
+    $month  = sanitize_text_field( $_POST['month'] ?? current_time( 'Y-m' ) );
     wp_send_json_success( mat_get_grouped_data( $emp_id, $month ) );
 }
 
@@ -288,7 +308,7 @@ function mat_get_paid_leave_list( $employee_code ) {
 // 履歴整形データ取得
 function mat_get_grouped_data( $emp_master_id, $month = null ) {
     global $wpdb;
-    if ( ! $month ) $month = date( 'Y-m' );
+    if ( ! $month ) $month = current_time( 'Y-m' );
     $results = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM " . MAT_LOG_TABLE . " WHERE registered_user_id = %d AND timestamp LIKE %s ORDER BY timestamp ASC", $emp_master_id, $month . '%' ) );
     
     $logs = array();
@@ -309,8 +329,24 @@ function mat_get_grouped_data( $emp_master_id, $month = null ) {
         
         preg_match_all( '/備考:\s*([^|]+)/', $r->item_name, $matches );
         $can_edit = ! $is_holiday && mat_get_setting( 'allow_log_edit', false ) && mat_is_in_current_period( date('Y-m-d', $ts) );
-        
-        $logs[] = array( 'id' => (int)$r->id, 'date' => $date_label, 'in' => $in, 'out' => $out, 'break' => $br, 'notes' => $matches[1] ?? array(), 'can_edit' => $can_edit, 'is_holiday' => $is_holiday );
+        $date_ymd = substr( $r->timestamp, 0, 10 );
+
+        $logs[] = array(
+            'id'         => (int) $r->id,
+            'date'       => $date_label,
+            'date_ymd'   => $date_ymd,
+            'in'         => $in,
+            'out'        => $out,
+            'break'      => $br,
+            'notes'      => $matches[1] ?? array(),
+            'can_edit'   => $can_edit,
+            'is_holiday' => $is_holiday,
+        );
     }
-    return array( 'logs' => $logs, 'work_days_count' => $work_days_count, 'total_days' => (int)date('t', strtotime($month.'-01')) );
+    return array(
+        'logs'            => $logs,
+        'work_days_count' => $work_days_count,
+        'total_days'      => (int) date( 't', strtotime( $month . '-01' ) ),
+        'today_ymd'       => current_time( 'Y-m-d' ),
+    );
 }

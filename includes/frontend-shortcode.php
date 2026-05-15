@@ -24,6 +24,7 @@ function mat_shortcode_render() {
     wp_localize_script( 'mat-js', 'matAjax', array(
         'ajaxurl'              => admin_url( 'admin-ajax.php' ),
         'nonce'                => wp_create_nonce( 'mat_nonce' ),
+        'todayYmd'             => current_time( 'Y-m-d' ),
         'usePasswordAuth'      => mat_get_setting( 'use_password_auth', true )    ? '1' : '0',
         'usePaidLeaveApproval' => mat_get_setting( 'use_paid_leave_approval', true ) ? '1' : '0',
         'allowLogEdit'         => mat_get_setting( 'allow_log_edit', false )      ? '1' : '0',
@@ -111,7 +112,7 @@ function mat_shortcode_render() {
         <!-- ======================== SECTION: 打刻メイン ======================== -->
         <div class="mat-section" id="mat-section-main" style="display:none;">
 
-            <!-- 1. 社員名（様なし） -->
+            <!-- 1. 社員名 -->
             <div class="mat-user-badge">
                 <span id="mat-user-name"></span>
             </div>
@@ -148,7 +149,7 @@ function mat_shortcode_render() {
                 打刻ログ
                 <input type="month" id="mat-view-month"
                     class="mat-month-picker"
-                    value="<?php echo date( 'Y-m' ); ?>">
+                    value="<?php echo esc_attr( current_time( 'Y-m' ) ); ?>">
             </div>
 
             <div class="mat-history-scroll">
@@ -160,18 +161,35 @@ function mat_shortcode_render() {
                             <th>退勤</th>
                             <th>休憩</th>
                             <th>備考</th>
+                            <th>休日</th>
                             <?php if ( mat_get_setting( 'allow_log_edit', false ) ) : ?>
                                 <th>編集</th>
                             <?php endif; ?>
                         </tr>
                     </thead>
                     <tbody id="mat-history-body">
-                        <tr><td colspan="6" class="mat-loading">読み込み中...</td></tr>
+                        <tr><td colspan="7" class="mat-loading">読み込み中...</td></tr>
                     </tbody>
                 </table>
             </div>
 
-            <!-- 6. 有給希望日の申請 -->
+            <!-- ★ 6. 休日登録 -->
+            <div class="mat-holiday-section">
+                <div class="mat-history-header" style="margin-top:20px;">
+                    休日の登録
+                </div>
+                <p class="mat-hint" style="margin:6px 0 10px;">
+                    打刻忘れか休みか不明な日付を「休日」として登録できます。
+                </p>
+                <div class="mat-paid-leave-form">
+                    <input type="date" id="mat-holiday-date" class="mat-input mat-input-date">
+                    <button id="mat-btn-register-holiday" class="mat-btn mat-btn-secondary">休日として登録</button>
+                </div>
+                <p class="mat-error" id="mat-error-holiday" style="display:none;"></p>
+                <p class="mat-success" id="mat-success-holiday" style="display:none;"></p>
+            </div>
+
+            <!-- 7. 有給希望日の申請 -->
             <?php if ( mat_get_setting( 'show_paid_leave_request', true ) ) : ?>
             <div class="mat-paid-leave-section" id="mat-paid-leave-section">
 
@@ -231,10 +249,11 @@ function mat_shortcode_render() {
                     <textarea id="mat-edit-note" class="mat-textarea" rows="2"></textarea>
                 </div>
                 <p class="mat-error" id="mat-edit-error" style="display:none;"></p>
-                <div class="mat-modal-actions">
-                    <button type="button" id="mat-edit-cancel" class="mat-btn mat-btn-secondary">キャンセル</button>
-                    <button type="button" id="mat-edit-save" class="mat-btn mat-btn-primary">💾 保存する</button>
-                </div>
+               <div class="mat-modal-actions">
+    <button type="button" id="mat-edit-delete" class="mat-btn mat-btn-danger" style="margin-right:auto;">🗑 削除する</button>
+    <button type="button" id="mat-edit-cancel" class="mat-btn mat-btn-secondary">キャンセル</button>
+    <button type="button" id="mat-edit-save" class="mat-btn mat-btn-primary">💾 保存する</button>
+</div>
             </div>
         </div>
 
