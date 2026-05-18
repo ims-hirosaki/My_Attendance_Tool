@@ -162,7 +162,6 @@ function mat_attendance_update_handler() {
         if ( $label === '退勤' && $parsed['has_clockout'] ) {
             wp_send_json_error( '本日はすでに退勤打刻済みです。' );
         }
-
         if ( $label === '休憩' ) {
             $base     = preg_replace( '/\s*\|\s*休憩:\s*\d{2}:\d{2}/', '', $existing_row->item_name );
             $new_item = rtrim( $base ) . ' | 休憩: ' . $time_val;
@@ -376,6 +375,7 @@ function mat_parse_attendance_item_name( $item_name ) {
         'is_holiday'          => $is_holiday,
         'has_clockin'         => $has_clockin,
         'has_clockout'        => $has_clockout,
+        'has_break'           => $has_break,
         'has_break_time'      => $has_break_time,
         'has_notes'           => $has_notes,
         'has_meaningful_data' => $has_meaningful_data,
