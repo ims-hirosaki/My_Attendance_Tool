@@ -14,9 +14,9 @@ jobs:
       - name: FTP Deploy
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
-          server: ${{ secrets.XSERVER_HOST }}
-          username: ${{ secrets.XSERVER_USER }}
-          password: ${{ secrets.XSERVER_KEY }}
+          server: ${{ secrets.XSERVER_HOST_s }}
+          username: ${{ secrets.XSERVER_USER_s }}
+          password: ${{ secrets.XSERVER_KEY_S }}
           local-dir: ./
           server-dir: /labs-ims.com/public_html/tanpoposub-test.labs-ims.com/wp-content/plugins/My_Attendance_Tool/
           
