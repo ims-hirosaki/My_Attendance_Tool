@@ -3,7 +3,7 @@ name: Deploy to XSERVER
 on:
   push:
     branches:
-      - master
+      - staging
 
 jobs:
   deploy:
@@ -18,5 +18,5 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./
-          server-dir: /xs969605.xsrv.jp/public_html/inhouse/wp-content/plugins/My_Attendance_Tool/
+          server-dir: /labs-ims.com/public_html/tanpoposub-test.labs-ims.com/wp-content/plugins/My_Attendance_Tool/
           
