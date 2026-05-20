@@ -1,39 +1,10 @@
 on:
   push:
     branches:
-      - master
-      - staging
-      - 'feature/**'
+      - 'feature/shiroto*'
 
 jobs:
-  deploy-production:
-    if: github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: FTP Deploy to Production
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: /xs969605.xsrv.jp/public_html/inhouse/wp-content/plugins/My_Attendance_Tool/
-
-  deploy-staging:
-    if: github.ref == 'refs/heads/staging'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: FTP Deploy to Staging
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
-        with:
-          server: ${{ secrets.XSERVER_HOST_s }}
-          username: ${{ secrets.XSERVER_USER_s }}
-          password: ${{ secrets.XSERVER_KEY_s }}
-          server-dir: /labs-ims.com/public_html/tanpoposub-test.labs-ims.com/wp-content/plugins/My_Attendance_Tool/
-
   deploy-personal:
-    if: startsWith(github.ref, 'refs/heads/feature/shiroto')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
