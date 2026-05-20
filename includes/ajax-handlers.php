@@ -472,6 +472,7 @@ function mat_get_grouped_data( $emp_master_id, $month = null ) {
             'in'         => $in,
             'out'        => $out,
             'break'      => $br,
+            'paid_leave' => ! empty( $r->paid_leave_date ) ? $r->paid_leave_date : '-',
             'notes'      => $matches[1] ?? array(),
             'can_edit'   => $can_edit,
             'is_holiday' => $is_holiday,
