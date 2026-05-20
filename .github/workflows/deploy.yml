@@ -31,16 +31,16 @@ jobs:
           username: ${{ secrets.XSERVER_USER_s }}
           password: ${{ secrets.XSERVER_KEY_s }}
           server-dir: /labs-ims.com/public_html/tanpoposub-test.labs-ims.com/wp-content/plugins/My_Attendance_Tool/
-
-    deploy-personal:
-        if: startsWith(github.ref, 'refs/heads/feature/shiroto')
-        runs-on: ubuntu-latest
-        steps:
-          - uses: actions/checkout@v3
-          - name: FTP Deploy to Personal Test
-            uses: SamKirkland/FTP-Deploy-Action@v4.3.4
-            with:
-              server: ${{ secrets.FTP_HOST_SHIROTO }}
-              username: ${{ secrets.FTP_USER_SHIROTO }}
-              password: ${{ secrets.FTP_PASS_SHIROTO }}
-              server-dir: /labs-ims.com/public_html/shiroto-test/tanpopo-shiroto/wp-content/plugins/My_Attendance_Tool/
+          
+  deploy-personal:
+      if: startsWith(github.ref, 'refs/heads/feature/shiroto')
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v3
+        - name: FTP Deploy to Personal Test
+          uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+          with:
+            server: ${{ secrets.FTP_HOST_SHIROTO }}
+            username: ${{ secrets.FTP_USER_SHIROTO }}
+            password: ${{ secrets.FTP_PASS_SHIROTO }}
+            server-dir: /labs-ims.com/public_html/shiroto-test/tanpopo-shiroto/wp-content/plugins/My_Attendance_Tool/
