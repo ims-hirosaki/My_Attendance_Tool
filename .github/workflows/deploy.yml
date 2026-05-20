@@ -43,4 +43,5 @@ jobs:
           server: ${{ secrets.FTP_HOST_SHIROTO }}
           username: ${{ secrets.FTP_USER_SHIROTO }}
           password: ${{ secrets.FTP_PASS_SHIROTO }}
-          server-dir: /shiroto-test.labs-ims.com/public_html/wp-content/plugins/My_Attendance_Tool/
+          server-dir: /labs-ims.com/public_html/shiroto-test/tanpop/wp-content/plugins/My_Attendance_Tool/
+          dangerous-clean-slate: false
