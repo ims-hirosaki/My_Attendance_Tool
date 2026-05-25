@@ -599,14 +599,17 @@ jQuery(document).ready(function ($) {
 
         $.each(data.logs, function (_, row) {
             // 休日行・時刻なしの空行はグレー背景で表示
-            var rowStyle = (row.is_holiday || row.is_empty)
-                ? ' style="background:#f5f5f5;color:#999;"'
-                : '';
+            // 打刻なし行はグレー、休日行は薄黄色で表示
+            var hasData = !!row.has_data;
+            var isHoliday = !!row.is_holiday;
+            var rowStyle = isHoliday ? ' style="background:#fff8e1;"'
+                : !hasData ? ' style="background:#fafafa;color:#bbb;"'
+                    : '';
             html += '<tr data-id="' + row.id + '"' + rowStyle + '>';
             html += '<td>' + esc(row.date) + '</td>';
 
-            if (row.is_holiday) {
-                // 出勤〜備考は空表示、休日列に表示
+            if (isHoliday) {
+                // 休日
                 html += '<td>-</td>';
                 html += '<td>-</td>';
                 html += '<td>-</td>';
@@ -616,9 +619,10 @@ jQuery(document).ready(function ($) {
                     html += '<td style="color:#ccc;font-size:.8em;">-</td>';
                 }
             } else {
-                html += '<td>' + esc(row.in) + '</td>';
-                html += '<td>' + esc(row.out) + '</td>';
-                html += '<td>' + esc(row.break) + '</td>';
+                // null を '-' に変換して表示
+                html += '<td>' + esc(row.in || '-') + '</td>';
+                html += '<td>' + esc(row.out || '-') + '</td>';
+                html += '<td>' + esc(row.break || '-') + '</td>';
 
                 var notes = Array.isArray(row.notes) ? row.notes.join(' / ') : '';
                 html += '<td style="text-align:left;">' + esc(notes) + '</td>';
@@ -631,9 +635,9 @@ jQuery(document).ready(function ($) {
                         html += '<td>'
                             + '<button class="mat-btn-sm mat-edit-btn"'
                             + ' data-id="' + row.id + '"'
-                            + ' data-in="' + esc(row.in === '-' ? '' : row.in) + '"'
-                            + ' data-out="' + esc(row.out === '-' ? '' : row.out) + '"'
-                            + ' data-break="' + esc((row.break === '-' || row.break === '00:00') ? '' : row.break) + '"'
+                            + ' data-in="' + esc(row.in || '') + '"'
+                            + ' data-out="' + esc(row.out || '') + '"'
+                            + ' data-break="' + esc(row.break || '') + '"'
                             + ' data-notes="' + esc(notes) + '"'
                             + '>編集</button>'
                             + '</td>';
