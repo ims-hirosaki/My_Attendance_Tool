@@ -114,7 +114,7 @@ jQuery(document).ready(function ($) {
         btnLoading($(this), true);
 
         $.post(ajaxurl, {
-            action: 'mat_verify_code',
+            action: 'mat_check_employee',
             employee_code: code,
             nonce: nonce,
         }, function (res) {
@@ -177,7 +177,7 @@ jQuery(document).ready(function ($) {
         btnLoading($(this), true);
 
         $.post(ajaxurl, {
-            action: 'mat_set_password',
+            action: 'mat_setup_password',
             employee_code: session.employeeCode,
             password: pw1,
             nonce: nonce,
@@ -209,7 +209,7 @@ jQuery(document).ready(function ($) {
         btnLoading($(this), true);
 
         $.post(ajaxurl, {
-            action: 'mat_login',
+            action: 'mat_verify_password',
             employee_code: session.employeeCode,
             password: pw,
             nonce: nonce,
