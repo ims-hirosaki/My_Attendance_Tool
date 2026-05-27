@@ -106,7 +106,6 @@ function mat_attendance_update_handler() {
     $emp_master_id = intval( $_POST['emp_master_id'] ?? 0 );
     $employee_code = sanitize_text_field( $_POST['employee_code'] ?? '' );
     $label         = sanitize_text_field( $_POST['label'] ?? '' );
-    $note          = sanitize_textarea_field( $_POST['note'] ?? '' );
     $today         = current_time( 'Y-m-d' );
 
     $emp = emp_get_employee_by_code( $employee_code );
@@ -168,9 +167,6 @@ function mat_attendance_update_handler() {
         } else {
             $new_item = $existing_row->item_name . ' | ' . $label . ': ' . $time_val;
         }
-        if ( ! empty( $note ) ) {
-             $new_item .= ' | 備考: ' . $note;
-         }
 
         $ok = $wpdb->update(
             MAT_LOG_TABLE,
@@ -183,6 +179,77 @@ function mat_attendance_update_handler() {
             wp_send_json_error( '打刻の保存に失敗しました。管理者にお問い合わせください。' );
         }
     }
+    wp_send_json_success( mat_get_grouped_data( $emp_master_id, current_time( 'Y-m' ) ) );
+}
+
+// 備考のみ登録（上書き保存）
+add_action( 'wp_ajax_mat_save_note',        'mat_save_note_handler' );
+add_action( 'wp_ajax_nopriv_mat_save_note', 'mat_save_note_handler' );
+function mat_save_note_handler() {
+    check_ajax_referer( 'mat_nonce', 'nonce' );
+    global $wpdb;
+
+    $emp_master_id = intval( $_POST['emp_master_id'] ?? 0 );
+    $employee_code = sanitize_text_field( $_POST['employee_code'] ?? '' );
+    $note          = sanitize_textarea_field( $_POST['note'] ?? '' );
+    $today         = current_time( 'Y-m-d' );
+
+    if ( ! $emp_master_id || $employee_code === '' ) {
+        wp_send_json_error( '社員情報が不正です。ログアウトしてから再度お試しください。' );
+    }
+    if ( trim( $note ) === '' ) {
+        wp_send_json_error( '備考を入力してください。' );
+    }
+
+    $emp = emp_get_employee_by_code( $employee_code );
+    if ( ! $emp ) {
+        wp_send_json_error( '社員情報が見つかりません。' );
+    }
+    if ( (int) $emp->id !== $emp_master_id ) {
+        wp_send_json_error( '社員情報が一致しません。ログアウトしてから再度お試しください。' );
+    }
+
+    $existing_row = mat_get_day_log_row( $emp_master_id, $today );
+    $existing_id  = $existing_row ? (int) $existing_row->id : 0;
+    $parsed       = mat_parse_attendance_item_name( $existing_row ? $existing_row->item_name : '' );
+
+    if ( $parsed['is_holiday'] ) {
+        wp_send_json_error( '本日は休日として登録されています。備考を登録する場合は、履歴の「編集」から削除するか、休日登録をやり直してください。' );
+    }
+
+    if ( $existing_id ) {
+        $base = preg_replace( '/\s*\|\s*備考:\s*[^|]*/u', '', (string) $existing_row->item_name );
+        $base = trim( preg_replace( '/\s*\|\s*\|+/', ' | ', $base ) );
+        $base = trim( $base, " \t\n\r\0\x0B|" );
+        $new_item = $base === '' ? '備考: ' . $note : $base . ' | 備考: ' . $note;
+
+        $ok = $wpdb->update(
+            MAT_LOG_TABLE,
+            array( 'item_name' => $new_item ),
+            array( 'id' => $existing_id ),
+            array( '%s' ),
+            array( '%d' )
+        );
+        if ( $ok === false ) {
+            wp_send_json_error( '備考の保存に失敗しました。管理者にお問い合わせください。' );
+        }
+    } else {
+        $ok = $wpdb->insert(
+            MAT_LOG_TABLE,
+            array(
+                'registered_user_id'   => $emp_master_id,
+                'registered_user_name' => $emp->name,
+                'employee_code'        => $employee_code,
+                'item_name'            => '備考: ' . $note,
+                'timestamp'            => current_time( 'Y-m-d H:i:s' ),
+            ),
+            array( '%d', '%s', '%s', '%s', '%s' )
+        );
+        if ( ! $ok ) {
+            wp_send_json_error( '備考の保存に失敗しました。管理者にお問い合わせください。' );
+        }
+    }
+
     wp_send_json_success( mat_get_grouped_data( $emp_master_id, current_time( 'Y-m' ) ) );
 }
 
