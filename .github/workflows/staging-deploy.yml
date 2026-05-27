@@ -19,4 +19,3 @@ jobs:
           password: ${{ secrets.XSERVER_KEY_s }}
           local-dir: ./
           server-dir: /labs-ims.com/public_html/tanpoposub-test.labs-ims.com/wp-content/plugins/My_Attendance_Tool/
-          
