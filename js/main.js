@@ -17,6 +17,7 @@ jQuery(document).ready(function ($) {
         employeeCode: '',
         userName: '',
         hasBreak: false,
+        hasNote: false,
     };
     var editTargetId = null;
 
@@ -315,7 +316,6 @@ jQuery(document).ready(function ($) {
         if (isSubmitting) return;
 
         var label = $(this).data('label');
-        var note = $('#mat-note').val();
 
         if (!session.empMasterId) {
             alert('ログインしてください。');
@@ -327,7 +327,6 @@ jQuery(document).ready(function ($) {
             emp_master_id: session.empMasterId,
             employee_code: session.employeeCode,
             label: label,
-            note: note,
             nonce: nonce,
         };
 
@@ -352,7 +351,6 @@ jQuery(document).ready(function ($) {
             if (res.success) {
                 var labelNames = { '出勤': '出勤', '退勤': '退勤', '休憩': '休憩' };
                 showToast(labelNames[label] + 'を登録しました ✓', 'success');
-                $('#mat-note').val('');
                 renderLogs(res.data);
                 refreshPunchButtons();
             } else {
@@ -368,6 +366,58 @@ jQuery(document).ready(function ($) {
     });
 
     // =========================================================
+    //  備考のみ登録（上書き保存）
+    // =========================================================
+    $(document).on('click', '#mat-btn-save-note', function () {
+        if (isSubmitting) return;
+
+        if (!session.empMasterId) {
+            alert('ログインしてください。');
+            return;
+        }
+
+        var note = $('#mat-note').val();
+        if (!note || !$.trim(note)) {
+            showToast('備考を入力してください。', 'error');
+            alert('エラー: 備考を入力してください。');
+            return;
+        }
+
+        if (session.hasNote) {
+            if (!confirm('すでに備考が登録されています。上書きしますか？')) return;
+        }
+
+        var $btn = $(this);
+        btnLoading($btn, true);
+        isSubmitting = true;
+
+        $.post(ajaxurl, {
+            action: 'mat_save_note',
+            emp_master_id: session.empMasterId,
+            employee_code: session.employeeCode,
+            note: note,
+            nonce: nonce,
+        }, function (res) {
+            btnLoading($btn, false);
+            isSubmitting = false;
+
+            if (res.success) {
+                showToast('備考を登録しました ✓', 'success');
+                $('#mat-note').val('');
+                renderLogs(res.data);
+                refreshPunchButtons();
+            } else {
+                showToast(res.data, 'error');
+                alert('エラー: ' + res.data);
+            }
+        }).fail(function () {
+            btnLoading($btn, false);
+            isSubmitting = false;
+            alert('通信エラーが発生しました。');
+        });
+    });
+
+    // =========================================================
     //  打刻ボタンの活性状態を更新（本日分はサーバーで判定）
     // =========================================================
     function applyPunchButtons(status) {
@@ -377,6 +427,7 @@ jQuery(document).ready(function ($) {
         var hasClockout = !!status.has_clockout;
         var isHoliday = !!status.is_holiday;
         session.hasBreak = !!status.has_break_time;
+        session.hasNote = !!status.has_notes;
         var $btnIn = $('.mat-wrap [data-label="出勤"]');
         var $btnOut = $('.mat-wrap [data-label="退勤"]');
 
