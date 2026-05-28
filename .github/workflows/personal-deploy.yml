@@ -7,9 +7,9 @@ jobs:
   deploy-personal:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: FTP Deploy to Personal Test
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
         with:
           server: ${{ secrets.FTP_HOST_SHIROTO }}
           username: ${{ secrets.FTP_USER_SHIROTO }}
