@@ -4,20 +4,23 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 /**
  * テーブル作成・マイグレーション
  *
- * 変更点（v3.0）：
+ * 変更点（v3.1.0）：
+ *  - wp_mat_attendance_daily を新規作成（正規化済み新テーブル）
+ *  - 旧テーブル wp_my_attendance_logs は移行完了まで維持（削除しない）
+ *
+ * 変更点（v3.0.0）：
  *  - wp_my_attendance_auth を新規作成（パスワード認証情報）
  *  - wp_my_attendance_users を廃止（employee-manager に統合）
- *  - wp_my_attendance_logs の registered_user_id 参照先を wp_emp_master.id に変更
  */
 function mat_create_tables() {
     global $wpdb;
     $charset = $wpdb->get_charset_collate();
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
-    // -------------------------
-    // 1. 勤怠ログテーブル（変更）
-    //    registered_user_id の参照先を wp_emp_master.id に変更
-    // -------------------------
+    // =========================================================
+    // 1. 勤怠ログテーブル（旧・維持）
+    //    ※ フェーズ4完了まで削除しない
+    // =========================================================
     dbDelta( "CREATE TABLE " . MAT_LOG_TABLE . " (
         id                      BIGINT(20)      NOT NULL AUTO_INCREMENT,
         item_name               VARCHAR(255)    NOT NULL                    COMMENT '打刻内容（出勤: HH:MM | 退勤: HH:MM | ...）',
@@ -32,9 +35,9 @@ function mat_create_tables() {
         KEY idx_user_id       (registered_user_id)
     ) $charset;" );
 
-    // -------------------------
-    // 2. 認証テーブル（新規）
-    // -------------------------
+    // =========================================================
+    // 2. 認証テーブル（v3.0.0〜）
+    // =========================================================
     dbDelta( "CREATE TABLE " . MAT_AUTH_TABLE . " (
         id                  BIGINT(20)      NOT NULL AUTO_INCREMENT,
         emp_master_id       BIGINT(20)      NOT NULL                    COMMENT 'wp_emp_master.id',
@@ -52,28 +55,46 @@ function mat_create_tables() {
         UNIQUE KEY uq_employee_code  (employee_code)
     ) $charset;" );
 
-    // -------------------------
-    // 3. 廃止テーブルの削除
-    //    wp_my_attendance_users は employee-manager に統合
-    // -------------------------
+    // =========================================================
+    // 3. 勤怠日次テーブル（新・v3.1.0〜）
+    //    正規化済み設計。item_name の文字列パースが不要。
+    //    旧テーブルと並行稼働し、移行完了後に旧テーブルを削除する。
+    // =========================================================
+    dbDelta( "CREATE TABLE " . MAT_DAILY_TABLE . " (
+        id              BIGINT(20)      NOT NULL AUTO_INCREMENT   COMMENT 'PK',
+        employee_id     BIGINT(20)      NOT NULL                  COMMENT 'wp_emp_master.id',
+        employee_code   VARCHAR(50)     NOT NULL DEFAULT ''       COMMENT '社員コード（冗長保持・検索用）',
+        work_date       DATE            NOT NULL                  COMMENT '勤務日（1日1レコード）',
+        clock_in        TIME                NULL DEFAULT NULL     COMMENT '出勤時刻',
+        clock_out       TIME                NULL DEFAULT NULL     COMMENT '退勤時刻',
+        break_minutes   SMALLINT UNSIGNED   NULL DEFAULT NULL     COMMENT '休憩時間（分）',
+        is_holiday      TINYINT(1)      NOT NULL DEFAULT 0        COMMENT '休日フラグ 1=休日',
+        note            TEXT                NULL DEFAULT NULL     COMMENT '備考',
+        created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        UNIQUE KEY uq_employee_date  (employee_id, work_date),
+        KEY idx_employee_code        (employee_code),
+        KEY idx_work_date            (work_date)
+    ) $charset;" );
+
+    // =========================================================
+    // 4. 旧テーブル（wp_my_attendance_users）の削除
+    //    ※ v3.0.0 で廃止済み。空なら削除、データ残存なら警告のみ。
+    // =========================================================
     $users_table = $wpdb->prefix . 'my_attendance_users';
-    $table_exists = $wpdb->get_var(
-        $wpdb->prepare( 'SHOW TABLES LIKE %s', $users_table )
-    );
-    if ( $table_exists ) {
-        // データが残っている場合は削除しない（管理者が確認できるよう警告のみ）
+    if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $users_table ) ) ) {
         $row_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM `{$users_table}`" );
         if ( $row_count === 0 ) {
             $wpdb->query( "DROP TABLE IF EXISTS `{$users_table}`" );
         } else {
-            // 旧テーブルにデータがある場合は管理画面に警告を表示
             add_action( 'admin_notices', 'mat_old_users_table_notice' );
         }
     }
 
-    // -------------------------
-    // 4. wp_options にデフォルト設定を保存（初回のみ）
-    // -------------------------
+    // =========================================================
+    // 5. デフォルト設定の保存（初回のみ）
+    // =========================================================
     $defaults = array(
         'mat_use_password_auth'       => 1,
         'mat_use_paid_leave_approval' => 1,
@@ -87,7 +108,6 @@ function mat_create_tables() {
         }
     }
 
-    // DBバージョンを更新
     update_option( 'mat_db_version', MAT_VERSION );
 }
 
@@ -104,22 +124,23 @@ function mat_old_users_table_notice() {
 }
 
 /**
- * プラグインアンインストール時に呼ばれるテーブル削除
- * （uninstall.php から呼び出す）
+ * プラグインアンインストール時のテーブル削除（uninstall.php から呼び出す）
  */
 function mat_drop_tables() {
     global $wpdb;
+    $wpdb->query( "DROP TABLE IF EXISTS " . MAT_DAILY_TABLE );
     $wpdb->query( "DROP TABLE IF EXISTS " . MAT_LOG_TABLE );
     $wpdb->query( "DROP TABLE IF EXISTS " . MAT_AUTH_TABLE );
     $wpdb->query( "DROP TABLE IF EXISTS `{$wpdb->prefix}my_attendance_users`" );
 
-    // wp_options の設定値も削除
     $option_keys = array(
         'mat_db_version',
         'mat_use_password_auth',
         'mat_use_paid_leave_approval',
+        'mat_show_paid_leave_request',
         'mat_allow_log_edit',
         'mat_closing_day',
+        'mat_migration_status',
     );
     foreach ( $option_keys as $key ) {
         delete_option( $key );
