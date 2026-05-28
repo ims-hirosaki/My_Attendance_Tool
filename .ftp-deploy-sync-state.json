@@ -1,0 +1,133 @@
+{
+    "description": "DO NOT DELETE THIS FILE. This file is used to keep track of which files have been synced in the most recent deployment. If you delete this file a resync will need to be done (which can take a while) - read more: https://github.com/SamKirkland/FTP-Deploy-Action",
+    "version": "1.0.0",
+    "generatedTime": 1779851590316,
+    "data": [
+        {
+            "type": "folder",
+            "name": "css"
+        },
+        {
+            "type": "file",
+            "name": "debug.log",
+            "size": 679,
+            "hash": "5855b0b830411148e21e3c6ea660d897976aa5aaec8fd2a5d78a1e02aed861ee"
+        },
+        {
+            "type": "folder",
+            "name": "includes"
+        },
+        {
+            "type": "folder",
+            "name": "js"
+        },
+        {
+            "type": "file",
+            "name": "my-attendance-tool.php",
+            "size": 5417,
+            "hash": "ff17254eff1bc2fa5c8150388a35eae0becf94f78af8fc99ad074510d920ed01"
+        },
+        {
+            "type": "file",
+            "name": "test.html",
+            "size": 117,
+            "hash": "eccab8e4171b2c1b33f9711f5ad99f93c89be931bfe1330943e9496ef55f980c"
+        },
+        {
+            "type": "file",
+            "name": "test2.html",
+            "size": 204,
+            "hash": "372144cff066576a650e82b04722331fe265175dbb012bdcf6416bb28998a74b"
+        },
+        {
+            "type": "file",
+            "name": "uninstall.php",
+            "size": 305,
+            "hash": "feb8ffef3098bbcdfe6d9918b89290d5fff5e4a530cb5a1216408b1ab0ba0f95"
+        },
+        {
+            "type": "file",
+            "name": "wp-config.php",
+            "size": 3592,
+            "hash": "20ec4207712517451ee5bc8dc82ff5147cfd793be48b13608b557d0e61f4c1ac"
+        },
+        {
+            "type": "file",
+            "name": "css/mat-csv-import.css",
+            "size": 4936,
+            "hash": "86d6df1b416c6fb534e7675710df410576cc32e6f7252390c319c15e480337a8"
+        },
+        {
+            "type": "file",
+            "name": "css/style.css",
+            "size": 14185,
+            "hash": "5050e05a0667a354186f227ae1dd32ef0cb8e247c26db2397334c1bc1aef7a2a"
+        },
+        {
+            "type": "file",
+            "name": "includes/admin-auth-management.php",
+            "size": 9684,
+            "hash": "e81ce9a17e9d20a9370ffce35d764311007d2565216b79010a95b04e413414b7"
+        },
+        {
+            "type": "file",
+            "name": "includes/admin-csv-import.php",
+            "size": 20289,
+            "hash": "b5778ca0ba9bb22530be21fc34329a26db1b8f3110d83f0b41f2027a4565dd51"
+        },
+        {
+            "type": "file",
+            "name": "includes/admin-settings-page.php",
+            "size": 7917,
+            "hash": "c857ee77d519c1c6a1dc7d805f5f44b997ba5cecc867e9e24ab2209dd6a73243"
+        },
+        {
+            "type": "file",
+            "name": "includes/admin-settings.php",
+            "size": 22425,
+            "hash": "ffd3ecff449ab21198288e7570d9628f44720f54fa668f20aeb23930c07c7f19"
+        },
+        {
+            "type": "file",
+            "name": "includes/admin-test-data.php",
+            "size": 22689,
+            "hash": "47bda5b33ca8cc7eb5b33fb3385b81fd9bb4e6a9501846eec7a158c0bae848aa"
+        },
+        {
+            "type": "file",
+            "name": "includes/ajax-handlers-backup.php",
+            "size": 21601,
+            "hash": "3ea29d1f0667a06fc64c4926ce8b46f4cbe580abc50db1504677eae5d7751d48"
+        },
+        {
+            "type": "file",
+            "name": "includes/ajax-handlers.php",
+            "size": 21601,
+            "hash": "3ea29d1f0667a06fc64c4926ce8b46f4cbe580abc50db1504677eae5d7751d48"
+        },
+        {
+            "type": "file",
+            "name": "includes/database-setup.php",
+            "size": 5918,
+            "hash": "4c9c076289ce47882a55403614e8bd6375cf88e108812e3db49820a391beddaa"
+        },
+        {
+            "type": "file",
+            "name": "includes/frontend-shortcode.php",
+            "size": 12224,
+            "hash": "236fce713cf37959e7461fbb2b24abeda10bd7eff8cb877f9687029f0adab400"
+        },
+        {
+            "type": "file",
+            "name": "js/main.js",
+            "size": 26970,
+            "hash": "e94a68cdea0faef1b98e21db434a35344620c08fc4072d9768fc425591859133"
+        },
+        {
+            "type": "file",
+            "name": "js/mat-csv-import.js",
+            "size": 14940,
+            "hash": "f5e464a1b3c689adc907206c527aa15bfa07dd89b29e89f47f1a4c71a20226ae"
+        }
+    ]
+}
