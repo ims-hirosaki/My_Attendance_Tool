@@ -266,24 +266,21 @@ function mat_history_page_render() {
                                 <td><?php echo esc_html( is_array( $day['notes'] ) ? implode( ' / ', $day['notes'] ) : '' ); ?></td>
                                 <td>
                                     <?php if ( ! $is_empty ) : ?>
-                                    <button class="button button-small edit-log"
-                                        data-id="<?php echo esc_attr( $day['id'] ); ?>"
-                                        data-in="<?php echo esc_attr( $day['in'] ?? '' ); ?>"
-                                        data-out="<?php echo esc_attr( $day['out'] ?? '' ); ?>"
-                                        data-break="<?php echo esc_attr( $day['break'] ?? '00:00' ); ?>"
-                                        data-notes="<?php echo esc_attr( is_array( $day['notes'] ) ? implode( ' / ', $day['notes'] ) : '' ); ?>"
-                                        data-holiday="<?php echo $is_holiday ? '1' : '0'; ?>"
-                                        data-date-label="<?php echo esc_attr( $day['date'] ); ?>">
-                                        編集
-                                    </button>
-                                    <?php else : ?>
-                                        <span style="color:#ddd;font-size:0.8em;">-</span>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </tbody>
+                                        <button class="button button-small edit-log"
+                        data-id="<?php echo esc_attr( $day['id'] ); ?>"
+                        data-in="<?php echo esc_attr( $day['in'] ?? '' ); ?>"
+                        data-out="<?php echo esc_attr( $day['out'] ?? '' ); ?>"
+                        data-break="<?php echo esc_attr( $day['break'] ?? '00:00' ); ?>"
+                        data-notes="<?php echo esc_attr( is_array( $day['notes'] ) ? implode( ' / ', $day['notes'] ) : '' ); ?>"
+                        data-holiday="<?php echo $is_holiday ? '1' : '0'; ?>"
+                        data-date-label="<?php echo esc_attr( $day['date'] ); ?>">
+                        <?php echo $is_empty ? '登録' : '編集'; ?>
+                    </button>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    <?php endif; ?>
+</tbody>
             </table>
         <?php endif; ?>
     </div>
