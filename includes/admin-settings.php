@@ -148,6 +148,9 @@ function mat_history_page_render() {
         ? sanitize_text_field( $_GET['view_month'] )
         : date( 'Y-m' );
 
+    // ★【新仕様】送信されたフィルターの状態を回収（未送信ならデフォルト値を設定）
+    $saved_filters = isset( $_GET['mat_filters'] ) ? array_map( 'sanitize_text_field', (array) $_GET['mat_filters'] ) : null;
+
     $selected_emp = null;
     foreach ( $employees as $emp ) {
         if ( $emp->employee_code === $selected_code ) { $selected_emp = $emp; break; }
@@ -198,8 +201,11 @@ function mat_history_page_render() {
             </div>
             <?php endif; ?>
 
-            <form method="get">
+            <form method="get" id="mat-filter-form">
                 <input type="hidden" name="page" value="my-attendance-settings">
+                
+                <div id="mat-hidden-filter-inputs"></div>
+
                 従業員：
                 <select name="employee_code" id="mat-employee-select">
                     <option value="">--- 従業員を選択してください ---</option>
@@ -264,7 +270,8 @@ function mat_history_page_render() {
                                         data-break="<?php echo esc_attr( $day['break'] ?? '00:00' ); ?>"
                                         data-notes="<?php echo esc_attr( is_array( $day['notes'] ) ? implode( ' / ', $day['notes'] ) : '' ); ?>"
                                         data-holiday="<?php echo $is_holiday ? '1' : '0'; ?>"
-                                        data-date-label="<?php echo esc_attr( $day['date'] ); ?>"> 編集
+                                        data-date-label="<?php echo esc_attr( $day['date'] ); ?>">
+                                        編集
                                     </button>
                                     <?php else : ?>
                                         <span style="color:#ddd;font-size:0.8em;">-</span>
@@ -314,7 +321,6 @@ function mat_history_page_render() {
         var nonce    = '<?php echo wp_create_nonce( "mat_admin_nonce" ); ?>';
         var currentId = null;
 
-        // PHP側で選択済みの対象者名・コードをJavaScriptのスコープへ安全に退避
         var selectedEmpCode = '<?php echo esc_js( $selected_emp ? $selected_emp->employee_code : '' ); ?>';
         var selectedEmpName = '<?php echo esc_js( $selected_emp ? $selected_emp->name : '' ); ?>';
 
@@ -323,10 +329,20 @@ function mat_history_page_render() {
         var jobTypeNames = <?php echo wp_json_encode( $job_type_names ); ?>;
         var activeTypes  = {};
 
-        // デフォルト：長距離・郵便はOFF、それ以外はON
-        jobTypeNames.forEach(function(jt) {
-            activeTypes[jt] = (jt !== '長距離' && jt !== '郵便');
-        });
+        // ★【ここを全面修正】URLからリロード前の状態を引き継ぐ
+        var savedFilters = <?php echo $saved_filters !== null ? wp_json_encode($saved_filters) : 'null'; ?>;
+        
+        if (savedFilters !== null) {
+            // 前回の送信データがあれば、それをStateとして完全再現
+            jobTypeNames.forEach(function(jt) {
+                activeTypes[jt] = savedFilters.indexOf(jt) !== -1;
+            });
+        } else {
+            // 初回表示時のみのデフォルト初期値
+            jobTypeNames.forEach(function(jt) {
+                activeTypes[jt] = (jt !== '長距離' && jt !== '郵便');
+            });
+        }
 
         function applyChipStyles() {
             $('.mat-chip').each(function() {
@@ -337,30 +353,37 @@ function mat_history_page_render() {
                     color:      on ? '#fff'     : '#2271b1',
                 });
             });
+            // 【新仕様】フォーム送信用の隠しinputタグをリアルタイム同期更新
+            updateHiddenFields();
         }
 
-        // 【バグ修正】ソートチップ操作時の状態（State）整合性維持ロジック
+        // 選択されているチップをformのパラメータに変換する処理
+        function updateHiddenFields() {
+            var $container = $('#mat-hidden-filter-inputs').empty();
+            Object.keys(activeTypes).forEach(function(jt) {
+                if (activeTypes[jt]) {
+                    $container.append($('<input type="hidden" name="mat_filters[]">').val(jt));
+                }
+            });
+        }
+
         function filterEmployees() {
             var $sel = $('#mat-employee-select');
             
             $sel.find('option').each(function() {
                 var val = $(this).val();
-                if (val === '') return; // 初期値オプションはスキップ
+                if (val === '') return; 
                 
                 var jt = $(this).data('job-type') || '';
                 var show = jt === '' || activeTypes[jt] !== false;
                 $(this).prop('disabled', !show).toggle(show);
             });
 
-            // チップ切り替えによって現在表示中の従業員が非表示（disabled）になったり、
-            // 意図しないデフォルト値（リストの先頭の人）に勝手にリセットされないよう厳密にホールド
             if (selectedEmpCode !== '') {
                 var $activeOpt = $sel.find('option[value="' + selectedEmpCode + '"]');
-                // 選択中の社員が絞り込み内に存在していれば、その選択状態（State）を強制維持
                 if ($activeOpt.length > 0 && !$activeOpt.prop('disabled')) {
                     $sel.val(selectedEmpCode);
                 } else {
-                    // 選択中の社員が完全に絞り込み対象外になった場合のみ、先頭の「---選択する---」に戻す
                     $sel.val('');
                 }
             } else {
@@ -375,7 +398,7 @@ function mat_history_page_render() {
             var jt = $(this).data('job-type');
             activeTypes[jt] = !activeTypes[jt];
             applyChipStyles();
-            filterEmployees(); // ここでStateが維持される
+            filterEmployees();
         });
         $('#mat-chip-all-on').on('click', function() {
             jobTypeNames.forEach(function(jt) { activeTypes[jt] = true; });
@@ -393,11 +416,9 @@ function mat_history_page_render() {
                 .closest('tr').css('opacity', opacity);
         }
 
-        // 編集ボタン（ポップアップ窓）
+        // 編集ボタン
         $(document).on('click', '.edit-log', function() {
             currentId = $(this).data('id');
-            
-            // 【仕様追加】モーダル内のメタ情報エリアに対象者データと日付データを流し込む
             if (selectedEmpCode !== '') {
                 $('#mat-modal-meta-emp').text('[' + selectedEmpCode + '] ' + selectedEmpName);
             } else {
