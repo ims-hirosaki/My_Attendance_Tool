@@ -1,8 +1,5 @@
 jQuery(document).ready(function ($) {
 
-    // =========================================================
-    //  設定・グローバル状態
-    // =========================================================
     var ajaxurl = matAjax.ajaxurl;
     var nonce = matAjax.nonce;
     var allowLogEdit = matAjax.allowLogEdit === '1';
@@ -19,9 +16,7 @@ jQuery(document).ready(function ($) {
     };
     var editTargetId = null;
 
-    // =========================================================
-    //  時計
-    // =========================================================
+    // 時計
     function tickClock() {
         var now = new Date();
         var h = String(now.getHours()).padStart(2, '0');
@@ -32,9 +27,6 @@ jQuery(document).ready(function ($) {
     tickClock();
     setInterval(tickClock, 1000);
 
-    // =========================================================
-    //  ユーティリティ
-    // =========================================================
     function minsToHHMM(mins) {
         mins = parseInt(mins, 10) || 0;
         return String(Math.floor(mins / 60)).padStart(2, '0')
@@ -66,40 +58,26 @@ jQuery(document).ready(function ($) {
     }
     function btnLoading($btn, loading) {
         if (loading) {
-            $btn.prop('disabled', true)
-                .data('original-text', $btn.text())
-                .text('処理中...');
+            $btn.prop('disabled', true).data('original-text', $btn.text()).text('処理中...');
         } else {
-            $btn.prop('disabled', false)
-                .text($btn.data('original-text') || $btn.text());
+            $btn.prop('disabled', false).text($btn.data('original-text') || $btn.text());
         }
     }
     function esc(str) {
         if (str === null || str === undefined) return '';
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
     function getCurrentYearMonth() {
         var now = new Date();
-        return now.getFullYear() + '-'
-            + String(now.getMonth() + 1).padStart(2, '0');
+        return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
     }
 
-    // =========================================================
-    //  休憩スライダー
-    // =========================================================
+    // 休憩スライダー
     $('#mat-break-slider').on('input', function () {
         $('#mat-break-display').text(minsToHHMM($(this).val()));
     });
 
-    // =========================================================
-    //  社員コード認証
-    //  → ajax-handlers.php の mat_check_employee に合わせる
-    //    status: 'needs_setup' / 'needs_password' / 'logged_in'
-    // =========================================================
+    // 社員コード認証
     $('#mat-btn-verify-code').on('click', function () {
         var code = $.trim($('#mat-employee-code').val());
         if (!code) { setError('mat-error-code', '社員コードを入力してください。'); return; }
@@ -128,12 +106,10 @@ jQuery(document).ready(function ($) {
                 $('#mat-new-password').val('');
                 $('#mat-new-password2').val('');
                 showSection('mat-section-set-password');
-
             } else if (d.status === 'needs_password') {
                 clearError('mat-error-login');
                 $('#mat-password').val('');
                 showSection('mat-section-enter-password');
-
             } else if (d.status === 'logged_in') {
                 session.empMasterId = d.emp_master_id;
                 session.employeeCode = d.employee_code;
@@ -150,23 +126,14 @@ jQuery(document).ready(function ($) {
         if (e.key === 'Enter') $('#mat-btn-verify-code').trigger('click');
     });
 
-    // =========================================================
-    //  パスワード新規設定
-    //  → mat_setup_password
-    // =========================================================
+    // パスワード新規設定
     $('#mat-btn-set-password').on('click', function () {
         var pw1 = $('#mat-new-password').val();
         var pw2 = $('#mat-new-password2').val();
         clearError('mat-error-set-password');
 
-        if (pw1.length < 4) {
-            setError('mat-error-set-password', 'パスワードは4文字以上で入力してください。');
-            return;
-        }
-        if (pw1 !== pw2) {
-            setError('mat-error-set-password', 'パスワードが一致しません。');
-            return;
-        }
+        if (pw1.length < 4) { setError('mat-error-set-password', 'パスワードは4文字以上で入力してください。'); return; }
+        if (pw1 !== pw2) { setError('mat-error-set-password', 'パスワードが一致しません。'); return; }
 
         btnLoading($(this), true);
 
@@ -177,10 +144,7 @@ jQuery(document).ready(function ($) {
             nonce: nonce,
         }, function (res) {
             btnLoading($('#mat-btn-set-password'), false);
-            if (!res.success) {
-                setError('mat-error-set-password', res.data);
-                return;
-            }
+            if (!res.success) { setError('mat-error-set-password', res.data); return; }
             var d = res.data;
             session.empMasterId = d.emp_master_id;
             session.employeeCode = d.employee_code;
@@ -192,10 +156,7 @@ jQuery(document).ready(function ($) {
         });
     });
 
-    // =========================================================
-    //  パスワードログイン
-    //  → mat_verify_password
-    // =========================================================
+    // パスワードログイン
     $('#mat-btn-login').on('click', function () {
         var pw = $('#mat-password').val();
         clearError('mat-error-login');
@@ -210,10 +171,7 @@ jQuery(document).ready(function ($) {
             nonce: nonce,
         }, function (res) {
             btnLoading($('#mat-btn-login'), false);
-            if (!res.success) {
-                setError('mat-error-login', res.data);
-                return;
-            }
+            if (!res.success) { setError('mat-error-login', res.data); return; }
             var d = res.data;
             session.empMasterId = d.emp_master_id;
             session.employeeCode = d.employee_code;
@@ -229,10 +187,7 @@ jQuery(document).ready(function ($) {
         if (e.key === 'Enter') $('#mat-btn-login').trigger('click');
     });
 
-    // =========================================================
-    //  パスワードリセット申請
-    //  → mat_request_password_reset
-    // =========================================================
+    // パスワードリセット申請
     $('#mat-forgot-password').on('click', function (e) {
         e.preventDefault();
         $('#mat-reset-code').val(session.employeeCode);
@@ -265,34 +220,23 @@ jQuery(document).ready(function ($) {
         });
     });
 
-    // =========================================================
-    //  「戻る」リンク
-    // =========================================================
-    $('#mat-back-to-code-from-setpw, #mat-back-to-code-from-login, #mat-back-to-code-from-reset')
-        .on('click', function (e) {
-            e.preventDefault();
-            session = { empMasterId: 0, employeeCode: '', userName: '', hasBreak: false, hasNote: false };
-            $('#mat-employee-code').val('');
-            clearError('mat-error-code');
-            showSection('mat-section-code');
-        });
+    // 戻る
+    $('#mat-back-to-code-from-setpw, #mat-back-to-code-from-login, #mat-back-to-code-from-reset').on('click', function (e) {
+        e.preventDefault();
+        session = { empMasterId: 0, employeeCode: '', userName: '', hasBreak: false, hasNote: false };
+        $('#mat-employee-code').val('');
+        clearError('mat-error-code');
+        showSection('mat-section-code');
+    });
 
-    // =========================================================
-    //  ログイン完了後の処理
-    // =========================================================
     function onLoginComplete() {
         $('#mat-user-name').text(session.userName);
         showSection('mat-section-main');
         loadLogs();
-        if (showPaidLeave) {
-            loadPaidLeaveRequests();
-        }
+        if (showPaidLeave) { loadPaidLeaveRequests(); }
         refreshPunchButtons();
     }
 
-    // =========================================================
-    //  ログアウト
-    // =========================================================
     $('#mat-logout').on('click', function (e) {
         e.preventDefault();
         session = { empMasterId: 0, employeeCode: '', userName: '', hasBreak: false, hasNote: false };
@@ -304,34 +248,29 @@ jQuery(document).ready(function ($) {
         showSection('mat-section-code');
     });
 
-    // =========================================================
-    //  打刻処理（出勤・退勤・休憩）
-    // =========================================================
+    // 打刻処理（備考上書き保護をフロント側でも中継連携）
     $(document).on('click', '.mat-punch-btn', function () {
         if (isSubmitting) return;
-
         var label = $(this).data('label');
-
-        if (!session.empMasterId) {
-            alert('ログインしてください。');
-            return;
-        }
+        if (!session.empMasterId) { alert('ログインしてください。'); return; }
 
         if (label === '休憩' && session.hasBreak) {
             if (!confirm('すでに休憩が登録されています。上書きしますか？')) return;
         }
+
+        // ★【バグ修正】現在入力ボックスにある備考データを送信パラメータとして引き連れる
+        var noteValue = $.trim($('#mat-note').val());
 
         var postData = {
             action: 'mat_attendance_update',
             emp_master_id: session.empMasterId,
             employee_code: session.employeeCode,
             label: label,
+            note: noteValue, 
             nonce: nonce,
         };
 
-        if (label === '休憩') {
-            postData.break_hhmm = minsToHHMM($('#mat-break-slider').val());
-        }
+        if (label === '休憩') { postData.break_hhmm = minsToHHMM($('#mat-break-slider').val()); }
 
         var $btn = $(this);
         btnLoading($btn, true);
@@ -356,23 +295,13 @@ jQuery(document).ready(function ($) {
         });
     });
 
-    // =========================================================
-    //  備考のみ登録（上書き保存）
-    //  → mat_save_note
-    // =========================================================
+    // 備考のみ保存
     $(document).on('click', '#mat-btn-save-note', function () {
         if (isSubmitting) return;
-
-        if (!session.empMasterId) {
-            alert('ログインしてください。');
-            return;
-        }
+        if (!session.empMasterId) { alert('ログインしてください。'); return; }
 
         var note = $.trim($('#mat-note').val());
-        if (!note) {
-            showToast('備考を入力してください。', 'error');
-            return;
-        }
+        if (!note) { showToast('備考を入力してください。', 'error'); return; }
 
         if (session.hasNote) {
             if (!confirm('すでに備考が登録されています。上書きしますか？')) return;
@@ -408,9 +337,6 @@ jQuery(document).ready(function ($) {
         });
     });
 
-    // =========================================================
-    //  打刻ボタンの活性状態を更新
-    // =========================================================
     function applyPunchButtons(status) {
         if (!status) return;
 
@@ -424,17 +350,13 @@ jQuery(document).ready(function ($) {
         var $btnOut = $('.mat-wrap [data-label="退勤"]');
 
         if (isHoliday || hasClockin) {
-            $btnIn.prop('disabled', true)
-                  .text(isHoliday ? '休日登録済' : '出勤済み')
-                  .css('opacity', '0.5');
+            $btnIn.prop('disabled', true).text(isHoliday ? '休日登録済' : '出勤済み').css('opacity', '0.5');
         } else {
             $btnIn.prop('disabled', false).text('出勤').css('opacity', '1');
         }
 
         if (isHoliday || !hasClockin || hasClockout) {
-            $btnOut.prop('disabled', true)
-                   .text(hasClockout ? '退勤済み' : '退勤')
-                   .css('opacity', '0.5');
+            $btnOut.prop('disabled', true).text(hasClockout ? '退勤済み' : '退勤').css('opacity', '0.5');
         } else {
             $btnOut.prop('disabled', false).text('退勤').css('opacity', '1');
         }
@@ -454,22 +376,14 @@ jQuery(document).ready(function ($) {
         });
     }
 
-    // =========================================================
-    //  休日登録
-    // =========================================================
+    // 休日登録
     $(document).on('click', '#mat-btn-register-holiday', function () {
         var holidayDate = $('#mat-holiday-date').val();
         clearError('mat-error-holiday');
         clearSuccess('mat-success-holiday');
 
-        if (!holidayDate) {
-            setError('mat-error-holiday', '日付を選択してください。');
-            return;
-        }
-        if (!session.empMasterId) {
-            setError('mat-error-holiday', 'ログインしてください。');
-            return;
-        }
+        if (!holidayDate) { setError('mat-error-holiday', '日付を選択してください。'); return; }
+        if (!session.empMasterId) { setError('mat-error-holiday', 'ログインしてください。'); return; }
 
         var $btn = $(this);
         btnLoading($btn, true);
@@ -487,11 +401,7 @@ jQuery(document).ready(function ($) {
                 setSuccess('mat-success-holiday', '休日として登録しました。');
                 var registeredMonth = holidayDate.substring(0, 7);
                 var viewingMonth = $('#mat-view-month').val() || getCurrentYearMonth();
-                if (registeredMonth === viewingMonth) {
-                    renderLogs(res.data);
-                } else {
-                    refreshPunchButtons();
-                }
+                if (registeredMonth === viewingMonth) { renderLogs(res.data); } else { refreshPunchButtons(); }
                 setTimeout(function () { clearSuccess('mat-success-holiday'); }, 3000);
             } else {
                 setError('mat-error-holiday', 'エラー: ' + res.data);
@@ -502,17 +412,11 @@ jQuery(document).ready(function ($) {
         });
     });
 
-    // =========================================================
-    //  有給希望申請
-    // =========================================================
+    // 有給希望申請
     $('#mat-btn-paid-leave').on('click', function () {
         var paidDate = $('#mat-paid-leave-date').val();
         clearError('mat-error-paid-leave');
-
-        if (!paidDate) {
-            setError('mat-error-paid-leave', '有給希望日を選択してください。');
-            return;
-        }
+        if (!paidDate) { setError('mat-error-paid-leave', '有給希望日を選択してください。'); return; }
 
         var $btn = $(this);
         btnLoading($btn, true);
@@ -538,31 +442,18 @@ jQuery(document).ready(function ($) {
     });
 
     $('#mat-paid-leave-date').on('change', function () {
-        if ($(this).val()) {
-            $(this).attr('data-has-value', '1');
-        } else {
-            $(this).removeAttr('data-has-value');
-        }
+        if ($(this).val()) { $(this).attr('data-has-value', '1'); } else { $(this).removeAttr('data-has-value'); }
     });
 
-    // =========================================================
-    //  有給申請一覧の取得・表示
-    // =========================================================
     function loadPaidLeaveRequests() {
-        $('#mat-paid-leave-body').html(
-            '<tr><td colspan="3" class="mat-loading">読み込み中...</td></tr>'
-        );
+        $('#mat-paid-leave-body').html('<tr><td colspan="3" class="mat-loading">読み込み中...</td></tr>');
         $.post(ajaxurl, {
             action: 'mat_get_paid_leave_requests',
             employee_code: session.employeeCode,
             nonce: nonce,
         }, function (res) {
-            if (res.success) {
-                renderPaidLeaveRequests(res.data);
-            } else {
-                $('#mat-paid-leave-body').html(
-                    '<tr><td colspan="3" style="text-align:center;padding:12px;color:#999;">取得できませんでした。</td></tr>'
-                );
+            if (res.success) { renderPaidLeaveRequests(res.data); } else {
+                $('#mat-paid-leave-body').html('<tr><td colspan="3" style="text-align:center;padding:12px;color:#999;">取得できませんでした。</td></tr>');
             }
         });
     }
@@ -570,59 +461,37 @@ jQuery(document).ready(function ($) {
     function renderPaidLeaveRequests(data) {
         var requests = data.requests || [];
         if (requests.length === 0) {
-            $('#mat-paid-leave-body').html(
-                '<tr><td colspan="3" class="mat-loading">申請はありません。</td></tr>'
-            );
+            $('#mat-paid-leave-body').html('<tr><td colspan="3" class="mat-loading">申請はありません。</td></tr>');
             return;
         }
-        var statusClass = {
-            'pending':  'mat-status-pending',
-            'approved': 'mat-status-approved',
-            'rejected': 'mat-status-rejected',
-        };
+        var statusClass = { 'pending':  'mat-status-pending', 'approved': 'mat-status-approved', 'rejected': 'mat-status-rejected' };
         var html = '';
         $.each(requests, function (_, r) {
             var cls = statusClass[r.status_key] || '';
-            html += '<tr>'
-                + '<td>' + esc(r.request_date) + '</td>'
-                + '<td>' + esc(r.paid_leave_date) + '</td>'
-                + '<td><span class="mat-status-badge ' + cls + '">' + esc(r.status) + '</span></td>'
-                + '</tr>';
+            html += '<tr><td>' + esc(r.request_date) + '</td><td>' + esc(r.paid_leave_date) + '</td><td><span class="mat-status-badge ' + cls + '">' + esc(r.status) + '</span></td></tr>';
         });
         $('#mat-paid-leave-body').html(html);
     }
 
-    // =========================================================
-    //  打刻履歴の取得・表示
-    // =========================================================
     function loadLogs() {
         var month = $('#mat-view-month').val() || getCurrentYearMonth();
-        $('#mat-history-body').html(
-            '<tr><td colspan="7" class="mat-loading">読み込み中...</td></tr>'
-        );
+        $('#mat-history-body').html('<tr><td colspan="7" class="mat-loading">読み込み中...</td></tr>');
         $.post(ajaxurl, {
             action: 'mat_get_logs',
             emp_master_id: session.empMasterId,
             month: month,
             nonce: nonce,
         }, function (res) {
-            if (res.success) {
-                renderLogs(res.data);
-            } else {
-                $('#mat-history-body').html(
-                    '<tr><td colspan="7" style="text-align:center;padding:16px;color:#999;">取得できませんでした。</td></tr>'
-                );
+            if (res.success) { renderLogs(res.data); } else {
+                $('#mat-history-body').html('<tr><td colspan="7" style="text-align:center;padding:16px;color:#999;">取得できませんでした。</td></tr>');
             }
         });
     }
 
     function renderLogs(data) {
-        if (data && data.today_ymd) matAjax.todayYmd = data.today_ymd;
-
+        if (data && data.today_ymd) matAjax.todayYmd = data.todayYmd;
         if (!data.logs || data.logs.length === 0) {
-            $('#mat-history-body').html(
-                '<tr><td colspan="7" class="mat-loading">データがありません。</td></tr>'
-            );
+            $('#mat-history-body').html('<tr><td colspan="7" class="mat-loading">データがありません。</td></tr>');
             refreshPunchButtons();
             return;
         }
@@ -631,16 +500,13 @@ jQuery(document).ready(function ($) {
         $.each(data.logs, function (_, row) {
             var isHoliday = !!row.is_holiday;
             var hasData   = !!row.has_data;
-            var rowStyle  = isHoliday       ? ' style="background:#fff8e1;"'
-                          : !hasData        ? ' style="background:#fafafa;color:#bbb;"'
-                          : '';
+            var rowStyle  = isHoliday ? ' style="background:#fff8e1;"' : !hasData ? ' style="background:#fafafa;color:#bbb;"' : '';
 
             html += '<tr data-id="' + row.id + '"' + rowStyle + '>';
             html += '<td>' + esc(row.date) + '</td>';
 
             if (isHoliday) {
-                html += '<td>-</td><td>-</td><td>-</td><td>-</td>';
-                html += '<td style="text-align:center;font-size:.9em;">🗓 休日</td>';
+                html += '<td>-</td><td>-</td><td>-</td><td>-</td><td style="text-align:center;font-size:.9em;">🗓 休日</td>';
                 if (allowLogEdit) html += '<td style="color:#ccc;font-size:.8em;">-</td>';
             } else {
                 html += '<td>' + esc(row.in  || '-') + '</td>';
@@ -652,14 +518,7 @@ jQuery(document).ready(function ($) {
 
                 if (allowLogEdit) {
                     if (row.can_edit) {
-                        html += '<td>'
-                            + '<button class="mat-btn-sm mat-edit-btn"'
-                            + ' data-id="'    + row.id + '"'
-                            + ' data-in="'    + esc(row.in    || '') + '"'
-                            + ' data-out="'   + esc(row.out   || '') + '"'
-                            + ' data-break="' + esc(row.break || '') + '"'
-                            + ' data-notes="' + esc(notes) + '"'
-                            + '>編集</button></td>';
+                        html += '<td><button class="mat-btn-sm mat-edit-btn" data-id="' + row.id + '" data-in="' + esc(row.in || '') + '" data-out="' + esc(row.out || '') + '" data-break="' + esc(row.break || '') + '" data-notes="' + esc(notes) + '">編集</button></td>';
                     } else {
                         html += '<td style="color:#ccc;font-size:.8em;">-</td>';
                     }
@@ -676,9 +535,7 @@ jQuery(document).ready(function ($) {
         if (session.empMasterId) loadLogs();
     });
 
-    // =========================================================
-    //  打刻編集モーダル（社員側）
-    // =========================================================
+    // 打刻編集モーダル
     $(document).on('click', '.mat-edit-btn', function () {
         editTargetId = $(this).data('id');
         $('#mat-edit-in').val($(this).data('in') || '');
@@ -689,17 +546,8 @@ jQuery(document).ready(function ($) {
         $('#mat-edit-modal').fadeIn(150);
     });
 
-    $('#mat-edit-cancel').on('click', function () {
-        $('#mat-edit-modal').fadeOut(150);
-        editTargetId = null;
-    });
-
-    $('#mat-edit-modal').on('click', function (e) {
-        if ($(e.target).is('#mat-edit-modal')) {
-            $(this).fadeOut(150);
-            editTargetId = null;
-        }
-    });
+    $('#mat-edit-cancel').on('click', function () { $('#mat-edit-modal').fadeOut(150); editTargetId = null; });
+    $('#mat-edit-modal').on('click', function (e) { if ($(e.target).is('#mat-edit-modal')) { $(this).fadeOut(150); editTargetId = null; } });
 
     $('#mat-edit-save').on('click', function () {
         if (!editTargetId) return;
@@ -711,19 +559,13 @@ jQuery(document).ready(function ($) {
             id: editTargetId,
             emp_master_id: session.empMasterId,
             clock_in:   $('#mat-edit-in').val(),
-            clock_out:  $('#mat-edit-out').val(),
+            clock_out:  $('#edit-out').val(),
             break_time: $('#mat-edit-break').val(),
             note:       $('#mat-edit-note').val(),
             nonce: nonce,
         }, function (res) {
             btnLoading($('#mat-edit-save'), false);
-            if (res.success) {
-                $('#mat-edit-modal').fadeOut(150);
-                editTargetId = null;
-                loadLogs();
-            } else {
-                setError('mat-edit-error', res.data);
-            }
+            if (res.success) { $('#mat-edit-modal').fadeOut(150); editTargetId = null; loadLogs(); } else { setError('mat-edit-error', res.data); }
         }).fail(function () {
             btnLoading($('#mat-edit-save'), false);
             setError('mat-edit-error', '通信エラーが発生しました。');
@@ -744,14 +586,7 @@ jQuery(document).ready(function ($) {
             nonce: nonce,
         }, function (res) {
             btnLoading($btn, false);
-            if (res.success) {
-                $('#mat-edit-modal').fadeOut(150);
-                editTargetId = null;
-                loadLogs();
-            } else {
-                alert('削除に失敗しました: ' + res.data);
-            }
+            if (res.success) { $('#mat-edit-modal').fadeOut(150); editTargetId = null; loadLogs(); } else { alert('削除に失敗しました: ' + res.data); }
         });
     });
-
 });

@@ -2,13 +2,11 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 /**
- * ajax-handlers.php  v3.1.0
+ * ajax-handlers.php  v3.1.1
  *
- * 変更点（v3.1.0）:
- *  - 全DB操作を旧テーブル（MAT_LOG_TABLE）から新テーブル（MAT_DAILY_TABLE）へ切り替え
- *  - mat_get_grouped_data() で月の全日付を生成（打刻なし日も返す）
- *  - break_minutes（分）⇔ HH:MM 変換ヘルパー追加
- *  - item_name 文字列パース（mat_parse_attendance_item_name）は後方互換のため残置
+ * 変更点:
+ * - 【フロント側バグ修正】備考が先入れされている状態で出勤・退勤・休憩ボタンが押された際、
+ * 既存の備考（note）が空で上書きされて消滅しないようサーバー側で既存データを保護・マージするロジックを実装。
  */
 
 // =========================================================
@@ -107,6 +105,7 @@ function mat_get_today_punch_status( $emp_master_id ) {
             'has_clockout'    => false,
             'has_break_time'  => false,
             'has_meaningful_data' => false,
+            'has_notes'       => false,
         );
     }
     return array(
@@ -115,6 +114,7 @@ function mat_get_today_punch_status( $emp_master_id ) {
         'has_clockout'        => ! is_null( $row->clock_out ),
         'has_break_time'      => ! is_null( $row->break_minutes ) && (int) $row->break_minutes > 0,
         'has_meaningful_data' => true,
+        'has_notes'           => ! is_null( $row->note ) && trim( $row->note ) !== '',
     );
 }
 
@@ -242,7 +242,6 @@ function mat_parse_attendance_item_name( $item_name ) {
 //  1. 認証系（変更なし）
 // =========================================================
 
-// 社員コード照合
 add_action( 'wp_ajax_mat_check_employee',        'mat_check_employee_handler' );
 add_action( 'wp_ajax_nopriv_mat_check_employee', 'mat_check_employee_handler' );
 function mat_check_employee_handler() {
@@ -268,7 +267,6 @@ function mat_check_employee_handler() {
     }
 }
 
-// パスワード初回設定
 add_action( 'wp_ajax_mat_setup_password',        'mat_setup_password_handler' );
 add_action( 'wp_ajax_nopriv_mat_setup_password', 'mat_setup_password_handler' );
 function mat_setup_password_handler() {
@@ -289,7 +287,6 @@ function mat_setup_password_handler() {
     wp_send_json_success( array( 'status' => 'logged_in', 'emp_master_id' => (int) $emp->id, 'employee_code' => $emp->employee_code, 'user_name' => $emp->name ) );
 }
 
-// パスワード認証
 add_action( 'wp_ajax_mat_verify_password',        'mat_verify_password_handler' );
 add_action( 'wp_ajax_nopriv_mat_verify_password', 'mat_verify_password_handler' );
 function mat_verify_password_handler() {
@@ -301,7 +298,6 @@ function mat_verify_password_handler() {
     global $wpdb;
     $auth = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM " . MAT_AUTH_TABLE . " WHERE employee_code = %s", $code ) );
 
-    // ロックチェック
     if ( $auth && $auth->locked_until && strtotime( $auth->locked_until ) > time() ) {
         wp_send_json_error( 'アカウントがロックされています。しばらく経ってから再試行してください。' );
     }
@@ -319,7 +315,6 @@ function mat_verify_password_handler() {
     wp_send_json_success( array( 'status' => 'logged_in', 'emp_master_id' => (int) $emp->id, 'employee_code' => $emp->employee_code, 'user_name' => $emp->name ) );
 }
 
-// パスワードリセット申請
 add_action( 'wp_ajax_mat_request_password_reset',        'mat_request_password_reset_handler' );
 add_action( 'wp_ajax_nopriv_mat_request_password_reset', 'mat_request_password_reset_handler' );
 function mat_request_password_reset_handler() {
@@ -336,7 +331,7 @@ function mat_request_password_reset_handler() {
 }
 
 // =========================================================
-//  2. 打刻更新（新テーブル版）
+//  2. 打刻更新（新テーブル版・データ上書き対策適用済み）
 // =========================================================
 
 add_action( 'wp_ajax_mat_attendance_update',        'mat_attendance_update_handler' );
@@ -348,7 +343,7 @@ function mat_attendance_update_handler() {
     $emp_master_id = intval( $_POST['emp_master_id'] ?? 0 );
     $employee_code = sanitize_text_field( $_POST['employee_code'] ?? '' );
     $label         = sanitize_text_field( $_POST['label'] ?? '' );
-    $note          = sanitize_textarea_field( $_POST['note'] ?? '' );
+    $note_input    = sanitize_textarea_field( $_POST['note'] ?? '' ); // フロント側から送られてくる現在の入力値
     $today         = current_time( 'Y-m-d' );
     $now_time      = current_time( 'H:i:s' );
 
@@ -361,6 +356,24 @@ function mat_attendance_update_handler() {
     // 本日の既存レコード取得
     $row = mat_get_today_row( $emp_master_id );
 
+    // 備考欄に何をセットするか決定（バグ対策：既存の備考が存在する場合は消さずに保持・マージ）
+    $existing_note = $row ? $row->note : null;
+    if ( ! empty( $note_input ) ) {
+        // 新しい入力がある場合、既存の備考と重複していなければ結合、空なら新規設定
+        if ( ! empty( $existing_note ) ) {
+            if ( strpos( $existing_note, $note_input ) === false ) {
+                $final_note = $existing_note . ' / ' . $note_input;
+            } else {
+                $final_note = $existing_note; // すでに含まれているなら既存を維持
+            }
+        } else {
+            $final_note = $note_input;
+        }
+    } else {
+        // フロントから送られた備考が空の場合、既存の備考データをそのまま引き継ぐ（上書き消滅防止）
+        $final_note = $existing_note;
+    }
+
     if ( $label === '出勤' ) {
         if ( $row && $row->is_holiday ) {
             wp_send_json_error( '本日は休日として登録されています。' );
@@ -370,8 +383,9 @@ function mat_attendance_update_handler() {
         }
 
         if ( $row ) {
+            // 【重要】備考先入れ後に一回出勤ボタンが押された場合
             $wpdb->update( MAT_DAILY_TABLE,
-                array( 'clock_in' => $now_time, 'note' => $note ?: null ),
+                array( 'clock_in' => $now_time, 'note' => $final_note ?: null ),
                 array( 'id' => (int) $row->id )
             );
         } else {
@@ -380,7 +394,7 @@ function mat_attendance_update_handler() {
                 'employee_code' => $employee_code,
                 'work_date'     => $today,
                 'clock_in'      => $now_time,
-                'note'          => $note ?: null,
+                'note'          => $final_note ?: null,
             ) );
         }
 
@@ -392,13 +406,8 @@ function mat_attendance_update_handler() {
             wp_send_json_error( '本日はすでに退勤打刻済みです。' );
         }
 
-        $new_note = $row->note;
-        if ( $note ) {
-            $new_note = $new_note ? $new_note . ' / ' . $note : $note;
-        }
-
         $wpdb->update( MAT_DAILY_TABLE,
-            array( 'clock_out' => $now_time, 'note' => $new_note ?: null ),
+            array( 'clock_out' => $now_time, 'note' => $final_note ?: null ),
             array( 'id' => (int) $row->id )
         );
 
@@ -413,24 +422,19 @@ function mat_attendance_update_handler() {
             wp_send_json_error( '休憩時間が不正です。' );
         }
 
-        $new_note = $row ? $row->note : null;
-        if ( $note ) {
-            $new_note = $new_note ? $new_note . ' / ' . $note : $note;
-        }
-
         $wpdb->update( MAT_DAILY_TABLE,
-            array( 'break_minutes' => $break_minutes, 'note' => $new_note ?: null ),
+            array( 'break_minutes' => $break_minutes, 'note' => $final_note ?: null ),
             array( 'id' => (int) $row->id )
         );
 
     } elseif ( $label === '備考' ) {
-        if ( ! $note ) {
+        if ( ! $note_input ) {
             wp_send_json_error( '備考が入力されていません。' );
         }
 
         if ( $row ) {
             $wpdb->update( MAT_DAILY_TABLE,
-                array( 'note' => $note ),
+                array( 'note' => $note_input ),
                 array( 'id' => (int) $row->id )
             );
         } else {
@@ -438,11 +442,10 @@ function mat_attendance_update_handler() {
                 'employee_id'   => $emp_master_id,
                 'employee_code' => $employee_code,
                 'work_date'     => $today,
-                'note'          => $note,
+                'note'          => $note_input,
             ) );
         }
 
-        // 備考分岐は明示的にここで返す
         wp_send_json_success( mat_get_grouped_data( $emp_master_id, current_time( 'Y-m' ) ) );
     }
 
@@ -469,7 +472,6 @@ function mat_register_holiday_handler() {
         wp_send_json_error( '社員情報が一致しません。ログアウトしてから再度お試しください。' );
     }
 
-    // UPSERT: 既存があれば上書き、なければ挿入
     $existing = mat_get_date_row( $emp_master_id, $holiday_date );
     if ( $existing ) {
         $ok = $wpdb->update( MAT_DAILY_TABLE,
@@ -583,6 +585,7 @@ function mat_edit_log_handler() {
 
     wp_send_json_success();
 }
+
 // =========================================================
 //  備考のみ登録（上書き保存）新テーブル版
 // =========================================================
@@ -613,7 +616,6 @@ function mat_save_note_handler() {
         wp_send_json_error( '社員情報が一致しません。ログアウトしてから再度お試しください。' );
     }
 
-    // 本日の既存レコード取得（新テーブル）
     $row = mat_get_today_row( $emp_master_id );
 
     if ( $row && $row->is_holiday ) {
@@ -621,7 +623,6 @@ function mat_save_note_handler() {
     }
 
     if ( $row ) {
-        // 既存レコードの備考を上書き
         $updated = $wpdb->update(
             MAT_DAILY_TABLE,
             array( 'note' => $note ),
@@ -633,7 +634,6 @@ function mat_save_note_handler() {
             wp_send_json_error( '備考の保存に失敗しました。管理者にお問い合わせください。' );
         }
     } else {
-        // 当日レコードがなければ新規作成（備考のみ）
         $inserted = $wpdb->insert(
             MAT_DAILY_TABLE,
             array(

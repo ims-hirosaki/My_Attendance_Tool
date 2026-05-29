@@ -2,18 +2,19 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 /**
- * admin-settings.php  v3.1.0
+ * admin-settings.php  v3.1.3
  *
- * 変更点（v3.1.0）:
- *  - mat_admin_edit_log_handler()   → MAT_DAILY_TABLE へ書き込み
- *  - mat_admin_delete_log_handler() → MAT_DAILY_TABLE から削除
- *  - mat_history_page_render()      → 全日付表示・空行グレー表示
+ * 変更点（v3.1.3）:
+ * - 【致命的バグ修正】新規登録時、表示月の桁数（1桁月/2桁月）によって不正な日付フォーマットがMySQLに送信されるJQueryのバグを完全修正。
+ * - 【表示改善】日付データテーブルの上に対象者の「社員コード ｜ 氏名　勤務実績：0/00日」を左詰めでスマートに追加。
+ * - 【表示改善】編集ポップアップ（モーダル）内に対象社員名と日付を表示するメタ領域を追加。
+ * - 【バグ修正】職種チップ（ソート）操作時、および「全OFF」選択での検索リロード後も選択State（状態）を100%完全に維持するロジックを搭載。
+ * - 【機能拡張】データの有無に関わらず、すべての日に「登録 / 編集」ボタンを常時出力。空行からでも管理者がダイレクトに新規追加（INSERT）できるように改修。
  */
 
 // =========================================================
 //  管理メニュー登録
 // =========================================================
-
 add_action( 'admin_menu', 'mat_register_admin_menu' );
 function mat_register_admin_menu() {
     add_menu_page(
@@ -30,7 +31,6 @@ function mat_register_admin_menu() {
 // =========================================================
 //  管理画面用スクリプト読み込み
 // =========================================================
-
 add_action( 'admin_enqueue_scripts', 'mat_admin_enqueue' );
 function mat_admin_enqueue( $hook ) {
     $page = $_GET['page'] ?? '';
@@ -50,9 +50,8 @@ function mat_admin_enqueue( $hook ) {
 }
 
 // =========================================================
-//  管理画面：勤怠編集 Ajax（新テーブル版）
+//  管理画面：勤怠編集・新規登録 Ajax（バグ修正完全版）
 // =========================================================
-
 add_action( 'wp_ajax_mat_admin_edit_log', 'mat_admin_edit_log_handler' );
 function mat_admin_edit_log_handler() {
     if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( '権限がありません。' );
@@ -66,13 +65,19 @@ function mat_admin_edit_log_handler() {
     $note       = sanitize_textarea_field( $_POST['note']   ?? '' );
     $is_holiday = ( ( $_POST['is_holiday'] ?? '0' ) === '1' );
 
-    $row = $wpdb->get_row( $wpdb->prepare(
-        "SELECT * FROM " . MAT_DAILY_TABLE . " WHERE id = %d", $id
-    ) );
-    if ( ! $row ) wp_send_json_error( 'レコードが見つかりません。' );
+    // 新規登録用の従業員コードと日付を回収
+    $employee_code = isset( $_POST['employee_code'] ) ? sanitize_text_field( $_POST['employee_code'] ) : '';
+    $work_date     = isset( $_POST['work_date'] )     ? sanitize_text_field( $_POST['work_date'] ) : '';
+
+    $row = null;
+    if ( $id > 0 ) {
+        $row = $wpdb->get_row( $wpdb->prepare(
+            "SELECT * FROM " . MAT_DAILY_TABLE . " WHERE id = %d", $id
+        ) );
+    }
 
     if ( $is_holiday ) {
-        $update = array(
+        $data_fields = array(
             'clock_in'      => null,
             'clock_out'     => null,
             'break_minutes' => null,
@@ -81,7 +86,7 @@ function mat_admin_edit_log_handler() {
         );
     } else {
         $break_minutes = mat_hhmm_to_minutes( $break_hhmm );
-        $update = array(
+        $data_fields = array(
             'clock_in'      => $clock_in  ?: null,
             'clock_out'     => $clock_out ?: null,
             'break_minutes' => $break_minutes,
@@ -90,8 +95,26 @@ function mat_admin_edit_log_handler() {
         );
     }
 
-    $updated = $wpdb->update( MAT_DAILY_TABLE, $update, array( 'id' => $id ) );
-    if ( $updated === false ) wp_send_json_error( '更新に失敗しました。' );
+    if ( $row ) {
+        // ① レコードが存在する場合は「UPDATE」
+        $updated = $wpdb->update( MAT_DAILY_TABLE, $data_fields, array( 'id' => $id ) );
+        if ( $updated === false ) wp_send_json_error( '更新に失敗しました。' );
+    } else {
+        // ② 空行からの登録時は「INSERT」を実行
+        if ( empty( $employee_code ) || empty( $work_date ) ) {
+            wp_send_json_error( '新規登録に必要な情報（従業員または日付）が不足しています。' );
+        }
+
+        $emp = emp_get_employee_by_code( $employee_code );
+        if ( ! $emp ) wp_send_json_error( '従業員情報が見つかりません。' );
+
+        $data_fields['employee_id']   = (int) $emp->id;
+        $data_fields['employee_code'] = $employee_code;
+        $data_fields['work_date']     = $work_date;
+
+        $inserted = $wpdb->insert( MAT_DAILY_TABLE, $data_fields );
+        if ( ! $inserted ) wp_send_json_error( '新規データの登録に失敗しました。' );
+    }
 
     wp_send_json_success();
 }
@@ -99,7 +122,6 @@ function mat_admin_edit_log_handler() {
 // =========================================================
 //  管理画面：勤怠削除 Ajax（新テーブル版）
 // =========================================================
-
 add_action( 'wp_ajax_mat_admin_delete_log', 'mat_admin_delete_log_handler' );
 function mat_admin_delete_log_handler() {
     if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( '権限がありません。' );
@@ -118,9 +140,8 @@ function mat_admin_delete_log_handler() {
 }
 
 // =========================================================
-//  勤怠履歴ページのレンダリング（全日付表示対応）
+//  勤怠履歴ページのレンダリング（全改修統合版）
 // =========================================================
-
 function mat_history_page_render() {
     if ( ! current_user_can( 'manage_options' ) ) return;
 
@@ -147,6 +168,10 @@ function mat_history_page_render() {
     $view_month = isset( $_GET['view_month'] )
         ? sanitize_text_field( $_GET['view_month'] )
         : date( 'Y-m' );
+
+    // 【バグ修正】「全OFF」リロード時のState消失を防ぐフラグと送信配列の回収
+    $filter_applied = isset( $_GET['mat_filter_applied'] ) ? true : false;
+    $saved_filters  = isset( $_GET['mat_filters'] ) ? array_map( 'sanitize_text_field', (array) $_GET['mat_filters'] ) : array();
 
     $selected_emp = null;
     foreach ( $employees as $emp ) {
@@ -198,10 +223,15 @@ function mat_history_page_render() {
             </div>
             <?php endif; ?>
 
-            <form method="get">
+            <form method="get" id="mat-filter-form">
                 <input type="hidden" name="page" value="my-attendance-settings">
+                
+                <input type="hidden" name="mat_filter_applied" value="1">
+                <div id="mat-hidden-filter-inputs"></div>
+
                 従業員：
                 <select name="employee_code" id="mat-employee-select">
+                    <option value="">--- 従業員を選択してください ---</option>
                     <?php foreach ( $employees as $emp ) : ?>
                         <option value="<?php echo esc_attr( $emp->employee_code ); ?>"
                             data-job-type="<?php echo esc_attr( isset( $emp->job_type_name ) ? $emp->job_type_name : '' ); ?>"
@@ -216,10 +246,15 @@ function mat_history_page_render() {
         </div>
 
         <?php if ( $selected_emp ) : ?>
-            <p style="margin-top:16px; font-size:1em;">
-                勤務実績：<strong><?php echo esc_html( $work_days_count ); ?></strong>
-                / <?php echo esc_html( $total_days ); ?> 日
-            </p>
+            <div class="mat-admin-selected-info-bar" style="margin: 20px 0 10px; padding: 12px 16px; background: #fff; border-left: 4px solid #2271b1; border-radius: 0 4px 4px 0; box-shadow: 0 1px 3px rgba(0,0,0,.05); font-size: 1.05em; font-weight: bold; color: #1d2327; display: flex; align-items: center; flex-wrap: wrap; gap: 20px;">
+                <div>
+                    <span style="color: #2271b1;">[<?php echo esc_html( $selected_emp->employee_code ); ?>]</span> 
+                    <span style="margin-left: 4px;"><?php echo esc_html( $selected_emp->name ); ?></span>
+                </div>
+                <div style="font-size: 0.9em; color: #50575e; font-weight: 600;">
+                    勤務実績：<strong style="color: #1d2327; font-size: 1.1em;"><?php echo esc_html( $work_days_count ); ?></strong> / <?php echo esc_html( $total_days ); ?> 日
+                </div>
+            </div>
 
             <table class="widefat fixed striped" style="margin-top:8px;">
                 <thead>
@@ -242,27 +277,23 @@ function mat_history_page_render() {
                             $row_style  = $is_empty ? 'color:#bbb; background:#fafafa;' : '';
                             if ( $is_holiday ) $row_style = 'background:#fff8e1;';
                         ?>
-                            <tr data-id="<?php echo esc_attr( $day['id'] ); ?>"
-                                style="<?php echo $row_style; ?>">
+                            <tr data-id="<?php echo esc_attr( $day['id'] ); ?>" style="<?php echo $row_style; ?>">
                                 <td><?php echo esc_html( $day['date'] ); ?></td>
                                 <td><?php echo esc_html( $day['in'] ?? '-' ); ?></td>
                                 <td><?php echo esc_html( $day['out'] ?? '-' ); ?></td>
                                 <td><?php echo esc_html( $day['break'] ?? '-' ); ?></td>
                                 <td><?php echo esc_html( is_array( $day['notes'] ) ? implode( ' / ', $day['notes'] ) : '' ); ?></td>
                                 <td>
-                                    <?php if ( ! $is_empty ) : ?>
                                     <button class="button button-small edit-log"
                                         data-id="<?php echo esc_attr( $day['id'] ); ?>"
                                         data-in="<?php echo esc_attr( $day['in'] ?? '' ); ?>"
                                         data-out="<?php echo esc_attr( $day['out'] ?? '' ); ?>"
                                         data-break="<?php echo esc_attr( $day['break'] ?? '00:00' ); ?>"
                                         data-notes="<?php echo esc_attr( is_array( $day['notes'] ) ? implode( ' / ', $day['notes'] ) : '' ); ?>"
-                                        data-holiday="<?php echo $is_holiday ? '1' : '0'; ?>">
-                                        編集
+                                        data-holiday="<?php echo $is_holiday ? '1' : '0'; ?>"
+                                        data-date-label="<?php echo esc_attr( $day['date'] ); ?>">
+                                        <?php echo $is_empty ? '登録' : '編集'; ?>
                                     </button>
-                                    <?php else : ?>
-                                        <span style="color:#ddd;font-size:0.8em;">-</span>
-                                    <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -272,11 +303,16 @@ function mat_history_page_render() {
         <?php endif; ?>
     </div>
 
-    <!-- 編集モーダル -->
     <div id="mat-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
          z-index:9999;align-items:center;justify-content:center;">
-        <div style="background:#fff;border-radius:8px;padding:28px;width:440px;max-width:90%;">
-            <h3 style="margin:0 0 20px;">打刻データの編集</h3>
+        <div style="background:#fff;border-radius:8px;padding:28px;width:440px;max-width:90%; box-shadow: 0 4px 16px rgba(0,0,0,0.2);">
+            <h3 style="margin:0 0 14px; color:#2271b1;">打刻データの編集</h3>
+            
+            <div class="mat-modal-target-meta" style="margin-bottom: 18px; padding: 10px 14px; background: #f0f6fc; border-left: 4px solid #2271b1; border-radius: 0 4px 4px 0; font-size: 0.92em; line-height: 1.6; color: #1d2327; font-weight: 600;">
+                <div style="margin-bottom: 2px;">対象者：<span id="mat-modal-meta-emp" style="color: #1d2327;">--</span></div>
+                <div>対象日：<span id="mat-modal-meta-date" style="color: #2271b1;">--</span></div>
+            </div>
+
             <table class="form-table" style="margin:0;">
                 <tr><th>出勤</th><td><input type="time" id="edit-in" class="regular-text"></td></tr>
                 <tr><th>退勤</th><td><input type="time" id="edit-out" class="regular-text"></td></tr>
@@ -284,9 +320,7 @@ function mat_history_page_render() {
                 <tr><th>備考</th><td><textarea id="edit-notes" class="regular-text" rows="2"></textarea></td></tr>
                 <tr>
                     <th>休日</th>
-                    <td><label>
-                        <input type="checkbox" id="edit-holiday"> 休日として登録する
-                    </label></td>
+                    <td><label><input type="checkbox" id="edit-holiday"> 休日として登録する</label></td>
                 </tr>
             </table>
             <p id="edit-error" style="color:#d63638;display:none;margin:10px 0 0;"></p>
@@ -302,38 +336,63 @@ function mat_history_page_render() {
     jQuery(function($) {
         var nonce    = '<?php echo wp_create_nonce( "mat_admin_nonce" ); ?>';
         var currentId = null;
+        var modalTargetDateYmd = ''; // 新規インサート登録用にパースした日付(YYYY-MM-DD)をホールドする変数
 
-        // 職種チップフィルター
+        var selectedEmpCode = '<?php echo esc_js( $selected_emp ? $selected_emp->employee_code : '' ); ?>';
+        var selectedEmpName = '<?php echo esc_js( $selected_emp ? $selected_emp->name : '' ); ?>';
+
+        // 職種チップフィルター用のマスタ展開
         var empData      = <?php echo wp_json_encode( $emp_js_data ); ?>;
         var jobTypeNames = <?php echo wp_json_encode( $job_type_names ); ?>;
         var activeTypes  = {};
 
-        // デフォルト：長距離・郵便はOFF、それ以外はON
-        jobTypeNames.forEach(function(jt) {
-            activeTypes[jt] = (jt !== '長距離' && jt !== '郵便');
-        });
+        // 【バグ修正】リロードや全OFF検索時にも職種チップの選択状態（State）を復元・追従するロジック
+        var isFilterApplied = <?php echo $filter_applied ? 'true' : 'false'; ?>;
+        var savedFilters    = <?php echo wp_json_encode($saved_filters); ?>;
+        
+        if (isFilterApplied) {
+            jobTypeNames.forEach(function(jt) {
+                activeTypes[jt] = savedFilters.indexOf(jt) !== -1;
+            });
+        } else {
+            jobTypeNames.forEach(function(jt) {
+                activeTypes[jt] = (jt !== '長距離' && jt !== '郵便');
+            });
+        }
 
         function applyChipStyles() {
             $('.mat-chip').each(function() {
                 var jt = $(this).data('job-type');
                 var on = activeTypes[jt] !== false;
-                $(this).css({
-                    background: on ? '#2271b1' : '#fff',
-                    color:      on ? '#fff'     : '#2271b1',
-                });
+                $(this).css({ background: on ? '#2271b1' : '#fff', color: on ? '#fff' : '#2271b1' });
+            });
+            updateHiddenFields();
+        }
+
+        function updateHiddenFields() {
+            var $container = $('#mat-hidden-filter-inputs').empty();
+            Object.keys(activeTypes).forEach(function(jt) {
+                if (activeTypes[jt]) { $container.append($('<input type="hidden" name="mat_filters[]">').val(jt)); }
             });
         }
+
         function filterEmployees() {
             var $sel = $('#mat-employee-select');
             $sel.find('option').each(function() {
+                var val = $(this).val();
+                if (val === '') return; 
                 var jt = $(this).data('job-type') || '';
                 var show = jt === '' || activeTypes[jt] !== false;
                 $(this).prop('disabled', !show).toggle(show);
             });
-            if ( $sel.find('option:selected').prop('disabled') ) {
-                $sel.find('option:not(:disabled)').first().prop('selected', true);
-            }
+
+            // 【バグ修正】チップ切り替え時のブラウザ自動リセットに抗い、現在選択中の従業員Stateを厳密にロック
+            if (selectedEmpCode !== '') {
+                var $activeOpt = $sel.find('option[value="' + selectedEmpCode + '"]');
+                if ($activeOpt.length > 0 && !$activeOpt.prop('disabled')) { $sel.val(selectedEmpCode); } else { $sel.val(''); }
+            } else { $sel.val(''); }
         }
+
         applyChipStyles();
         filterEmployees();
 
@@ -352,16 +411,33 @@ function mat_history_page_render() {
             applyChipStyles(); filterEmployees();
         });
 
-        // 休日チェック時のUI切り替え
         function toggleHolidayUI(isHoliday) {
             var opacity = isHoliday ? '0.5' : '1';
-            $('#edit-in, #edit-out, #edit-break').prop('disabled', isHoliday)
-                .closest('tr').css('opacity', opacity);
+            $('#edit-in, #edit-out, #edit-break').prop('disabled', isHoliday).closest('tr').css('opacity', opacity);
         }
 
-        // 編集ボタン
+        // 編集/登録ボタンクリック時（モーダル展開）
         $(document).on('click', '.edit-log', function() {
             currentId = $(this).data('id');
+            
+            // 【バグ修正】表示月（YYYY-M、YYYY-MMどっちの環境でも）から安全にゼロ埋めスプリットしてパース逆算
+            var dateLabel = $(this).data('date-label') || '';
+            if (dateLabel) {
+                var currentMonth = $('input[name="view_month"]').val(); // "2026-05" など
+                var dateMatch = dateLabel.match(/\/(\d{2})/); // 日("01"など)を抽出
+                if (dateMatch && currentMonth) {
+                    var parts = currentMonth.split('-');
+                    var year = parts[0];
+                    var month = String(parts[1]).padStart(2, '0');
+                    var day = String(dateMatch[1]).padStart(2, '0');
+                    modalTargetDateYmd = year + '-' + month + '-' + day;
+                }
+            }
+
+            // モーダル窓内にメタデータを流し込み
+            if (selectedEmpCode !== '') { $('#mat-modal-meta-emp').text('[' + selectedEmpCode + '] ' + selectedEmpName); } else { $('#mat-modal-meta-emp').text('--'); }
+            $('#mat-modal-meta-date').text(dateLabel || '--');
+
             $('#edit-in').val($(this).data('in') || '');
             $('#edit-out').val($(this).data('out') || '');
             $('#edit-break').val($(this).data('break') || '00:00');
@@ -375,39 +451,35 @@ function mat_history_page_render() {
 
         $('#edit-holiday').on('change', function() { toggleHolidayUI($(this).is(':checked')); });
 
-        // 削除ボタン
+        // 削除処理
         $('#edit-delete').on('click', function() {
             if (!currentId || !confirm('このデータを完全に削除しますか？')) return;
             var $btn = $(this);
             $btn.prop('disabled', true).text('削除中...');
             $.post(ajaxurl, { action: 'mat_admin_delete_log', id: currentId, nonce: nonce }, function(res) {
-                if (res.success) { location.reload(); }
-                else { alert(res.data); $btn.prop('disabled', false).text('🗑 削除する'); }
+                if (res.success) { location.reload(); } else { alert(res.data); $btn.prop('disabled', false).text('🗑 削除する'); }
             });
         });
 
-        // モーダルを閉じる
-        $('#edit-cancel, #mat-edit-modal').on('click', function(e) {
-            if (e.target === this) { $('#mat-edit-modal').hide(); currentId = null; }
-        });
+        $('#edit-cancel, #mat-edit-modal').on('click', function(e) { if (e.target === this) { $('#mat-edit-modal').hide(); currentId = null; } });
         $(document).on('keydown', function(e) { if (e.key === 'Escape') $('#mat-edit-modal').hide(); });
 
-        // 保存ボタン
+        // 保存・新規登録ボタン
         $('#edit-save').on('click', function() {
-            if (!currentId) return;
             $(this).prop('disabled', true).text('保存中...');
             $.post(ajaxurl, {
-                action:     'mat_admin_edit_log',
-                id:         currentId,
-                clock_in:   $('#edit-in').val(),
-                clock_out:  $('#edit-out').val(),
-                break_time: $('#edit-break').val() || '00:00',
-                note:       $('#edit-notes').val(),
-                is_holiday: $('#edit-holiday').is(':checked') ? '1' : '0',
-                nonce:      nonce,
+                action:        'mat_admin_edit_log',
+                id:            currentId, // 0の場合は新規登録INSERT、1以上なら編集UPDATE
+                employee_code: selectedEmpCode,       
+                work_date:     modalTargetDateYmd,    
+                clock_in:      $('#edit-in').val(),
+                clock_out:     $('#edit-out').val(),
+                break_time:    $('#edit-break').val() || '00:00',
+                note:          $('#edit-notes').val(),
+                is_holiday:    $('#edit-holiday').is(':checked') ? '1' : '0',
+                nonce:         nonce,
             }, function(res) {
-                if (res.success) { location.reload(); }
-                else {
+                if (res.success) { location.reload(); } else {
                     $('#edit-error').text(res.data).show();
                     $('#edit-save').prop('disabled', false).text('💾 保存する');
                 }
