@@ -248,25 +248,24 @@ function mat_history_page_render() {
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if ( empty( $logs ) ) : ?>
-                        <tr><td colspan="6" style="text-align:center;padding:20px;">データがありません。</td></tr>
-                    <?php else : ?>
-                        <?php foreach ( $logs as $day ) :
-                            $is_empty   = ! $day['has_data'];
-                            $is_holiday = $day['is_holiday'];
-                            $row_style  = $is_empty ? 'color:#bbb; background:#fafafa;' : '';
-                            if ( $is_holiday ) $row_style = 'background:#fff8e1;';
-                        ?>
-                            <tr data-id="<?php echo esc_attr( $day['id'] ); ?>"
-                                style="<?php echo $row_style; ?>">
-                                <td><?php echo esc_html( $day['date'] ); ?></td>
-                                <td><?php echo esc_html( $day['in'] ?? '-' ); ?></td>
-                                <td><?php echo esc_html( $day['out'] ?? '-' ); ?></td>
-                                <td><?php echo esc_html( $day['break'] ?? '-' ); ?></td>
-                                <td><?php echo esc_html( is_array( $day['notes'] ) ? implode( ' / ', $day['notes'] ) : '' ); ?></td>
-                                <td>
-                                    <?php if ( ! $is_empty ) : ?>
-                                        <button class="button button-small edit-log"
+    <?php if ( empty( $logs ) ) : ?>
+        <tr><td colspan="6" style="text-align:center;padding:20px;">データがありません。</td></tr>
+    <?php else : ?>
+        <?php foreach ( $logs as $day ) :
+            $is_empty   = ! $day['has_data'];
+            $is_holiday = $day['is_holiday'];
+            $row_style  = $is_empty ? 'color:#bbb; background:#fafafa;' : '';
+            if ( $is_holiday ) $row_style = 'background:#fff8e1;';
+        ?>
+            <tr data-id="<?php echo esc_attr( $day['id'] ); ?>"
+                style="<?php echo $row_style; ?>">
+                <td><?php echo esc_html( $day['date'] ); ?></td>
+                <td><?php echo esc_html( $day['in'] ?? '-' ); ?></td>
+                <td><?php echo esc_html( $day['out'] ?? '-' ); ?></td>
+                <td><?php echo esc_html( $day['break'] ?? '-' ); ?></td>
+                <td><?php echo esc_html( is_array( $day['notes'] ) ? implode( ' / ', $day['notes'] ) : '' ); ?></td>
+                <td>
+                    <button class="button button-small edit-log"
                         data-id="<?php echo esc_attr( $day['id'] ); ?>"
                         data-in="<?php echo esc_attr( $day['in'] ?? '' ); ?>"
                         data-out="<?php echo esc_attr( $day['out'] ?? '' ); ?>"
