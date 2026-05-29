@@ -1,18 +1,18 @@
 on:
   push:
     branches:
-      - 'feature/shiroto*'
+      - 'tes_fix'
 
 jobs:
   deploy-personal:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: FTP Deploy to Personal Test
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
         with:
           server: ${{ secrets.FTP_HOST_SHIROTO }}
           username: ${{ secrets.FTP_USER_SHIROTO }}
           password: ${{ secrets.FTP_PASS_SHIROTO }}
-          server-dir: /labs-ims.com/public_html/shiroto-test/tanpop/wp-content/plugins/My_Attendance_Tool/
+          server-dir: /labs-ims.com/public_html/ozaki-test.labs-ims.com/wp-content/plugins/My_Attendance_Tool/
           dangerous-clean-slate: false

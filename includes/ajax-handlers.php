@@ -392,7 +392,6 @@ function mat_attendance_update_handler() {
             wp_send_json_error( '本日はすでに退勤打刻済みです。' );
         }
 
-        // 備考は追記（出勤時の備考があれば " / " で結合）
         $new_note = $row->note;
         if ( $note ) {
             $new_note = $new_note ? $new_note . ' / ' . $note : $note;
@@ -414,7 +413,7 @@ function mat_attendance_update_handler() {
             wp_send_json_error( '休憩時間が不正です。' );
         }
 
-        $new_note = $row->note;
+        $new_note = $row ? $row->note : null;
         if ( $note ) {
             $new_note = $new_note ? $new_note . ' / ' . $note : $note;
         }
@@ -423,6 +422,28 @@ function mat_attendance_update_handler() {
             array( 'break_minutes' => $break_minutes, 'note' => $new_note ?: null ),
             array( 'id' => (int) $row->id )
         );
+
+    } elseif ( $label === '備考' ) {
+        if ( ! $note ) {
+            wp_send_json_error( '備考が入力されていません。' );
+        }
+
+        if ( $row ) {
+            $wpdb->update( MAT_DAILY_TABLE,
+                array( 'note' => $note ),
+                array( 'id' => (int) $row->id )
+            );
+        } else {
+            $wpdb->insert( MAT_DAILY_TABLE, array(
+                'employee_id'   => $emp_master_id,
+                'employee_code' => $employee_code,
+                'work_date'     => $today,
+                'note'          => $note,
+            ) );
+        }
+
+        // 備考分岐は明示的にここで返す
+        wp_send_json_success( mat_get_grouped_data( $emp_master_id, current_time( 'Y-m' ) ) );
     }
 
     wp_send_json_success( mat_get_grouped_data( $emp_master_id, current_time( 'Y-m' ) ) );
@@ -561,6 +582,74 @@ function mat_edit_log_handler() {
     ), array( 'id' => $id ) );
 
     wp_send_json_success();
+}
+// =========================================================
+//  備考のみ登録（上書き保存）新テーブル版
+// =========================================================
+
+add_action( 'wp_ajax_mat_save_note',        'mat_save_note_handler' );
+add_action( 'wp_ajax_nopriv_mat_save_note', 'mat_save_note_handler' );
+function mat_save_note_handler() {
+    check_ajax_referer( 'mat_nonce', 'nonce' );
+    global $wpdb;
+
+    $emp_master_id = intval( $_POST['emp_master_id'] ?? 0 );
+    $employee_code = sanitize_text_field( $_POST['employee_code'] ?? '' );
+    $note          = sanitize_textarea_field( $_POST['note'] ?? '' );
+    $today         = current_time( 'Y-m-d' );
+
+    if ( ! $emp_master_id || $employee_code === '' ) {
+        wp_send_json_error( '社員情報が不正です。ログアウトしてから再度お試しください。' );
+    }
+    if ( trim( $note ) === '' ) {
+        wp_send_json_error( '備考を入力してください。' );
+    }
+
+    $emp = emp_get_employee_by_code( $employee_code );
+    if ( ! $emp ) {
+        wp_send_json_error( '社員情報が見つかりません。' );
+    }
+    if ( (int) $emp->id !== $emp_master_id ) {
+        wp_send_json_error( '社員情報が一致しません。ログアウトしてから再度お試しください。' );
+    }
+
+    // 本日の既存レコード取得（新テーブル）
+    $row = mat_get_today_row( $emp_master_id );
+
+    if ( $row && $row->is_holiday ) {
+        wp_send_json_error( '本日は休日として登録されています。' );
+    }
+
+    if ( $row ) {
+        // 既存レコードの備考を上書き
+        $updated = $wpdb->update(
+            MAT_DAILY_TABLE,
+            array( 'note' => $note ),
+            array( 'id' => (int) $row->id ),
+            array( '%s' ),
+            array( '%d' )
+        );
+        if ( $updated === false ) {
+            wp_send_json_error( '備考の保存に失敗しました。管理者にお問い合わせください。' );
+        }
+    } else {
+        // 当日レコードがなければ新規作成（備考のみ）
+        $inserted = $wpdb->insert(
+            MAT_DAILY_TABLE,
+            array(
+                'employee_id'   => $emp_master_id,
+                'employee_code' => $employee_code,
+                'work_date'     => $today,
+                'note'          => $note,
+            ),
+            array( '%d', '%s', '%s', '%s' )
+        );
+        if ( ! $inserted ) {
+            wp_send_json_error( '備考の保存に失敗しました。管理者にお問い合わせください。' );
+        }
+    }
+
+    wp_send_json_success( mat_get_grouped_data( $emp_master_id, current_time( 'Y-m' ) ) );
 }
 
 // =========================================================

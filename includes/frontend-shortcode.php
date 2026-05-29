@@ -142,6 +142,9 @@ function mat_shortcode_render() {
             <div class="mat-note-box">
                 <label class="mat-label">備考</label>
                 <textarea id="mat-note" class="mat-textarea" placeholder="備考があれば入力"></textarea>
+                <button id="mat-btn-save-note" class="mat-btn mat-btn-secondary mat-btn-full" type="button">
+                    備考を登録
+                </button>
             </div>
 
             <!-- 5. 打刻ログ -->
