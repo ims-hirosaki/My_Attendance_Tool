@@ -392,7 +392,6 @@ function mat_attendance_update_handler() {
             wp_send_json_error( '本日はすでに退勤打刻済みです。' );
         }
 
-        // 備考は追記（出勤時の備考があれば " / " で結合）
         $new_note = $row->note;
         if ( $note ) {
             $new_note = $new_note ? $new_note . ' / ' . $note : $note;
@@ -403,7 +402,7 @@ function mat_attendance_update_handler() {
             array( 'id' => (int) $row->id )
         );
 
-    } } elseif ( $label === '休憩' ) {
+    } elseif ( $label === '休憩' ) {
         if ( ! $row || is_null( $row->clock_in ) ) {
             wp_send_json_error( '出勤打刻がありません。先に出勤を打刻してください。' );
         }
@@ -425,19 +424,16 @@ function mat_attendance_update_handler() {
         );
 
     } elseif ( $label === '備考' ) {
-        // 備考のみ登録・上書き保存
         if ( ! $note ) {
             wp_send_json_error( '備考が入力されていません。' );
         }
 
         if ( $row ) {
-            // 既存レコードがあれば備考を上書き
             $wpdb->update( MAT_DAILY_TABLE,
                 array( 'note' => $note ),
                 array( 'id' => (int) $row->id )
             );
         } else {
-            // 当日レコードがなければ新規作成（備考のみ）
             $wpdb->insert( MAT_DAILY_TABLE, array(
                 'employee_id'   => $emp_master_id,
                 'employee_code' => $employee_code,
@@ -445,6 +441,9 @@ function mat_attendance_update_handler() {
                 'note'          => $note,
             ) );
         }
+
+        // 備考分岐は明示的にここで返す
+        wp_send_json_success( mat_get_grouped_data( $emp_master_id, current_time( 'Y-m' ) ) );
     }
 
     wp_send_json_success( mat_get_grouped_data( $emp_master_id, current_time( 'Y-m' ) ) );

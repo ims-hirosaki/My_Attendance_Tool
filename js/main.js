@@ -312,6 +312,7 @@ jQuery(document).ready(function ($) {
     //  打刻処理（出勤・退勤・休憩）
     // =========================================================
     // =========================================================
+// =========================================================
 //  備考のみ登録
 // =========================================================
 $('#mat-btn-save-note').on('click', function () {
@@ -326,17 +327,6 @@ $('#mat-btn-save-note').on('click', function () {
     if (!session.empMasterId) {
         setError('mat-error-note-only', 'ログインしてください。');
         return;
-    }
-    // 既存の備考がある場合に確認
-    var existingNote = '';
-    $('#mat-history-body tr').each(function () {
-        var dateYmd = $(this).data('date-ymd') || '';
-        if (dateYmd === matAjax.todayYmd) {
-            existingNote = $(this).find('td').eq(4).text().trim();
-        }
-    });
-    if (existingNote && existingNote !== '-') {
-        if (!confirm('本日の備考「' + existingNote + '」を上書きします。よろしいですか？')) return;
     }
 
     var $btn = $(this);
