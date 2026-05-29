@@ -2,10 +2,11 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 /**
- * admin-settings.php  v3.1.2
+ * admin-settings.php  v3.1.3
  *
- * 変更点（v3.1.2）:
- * - 【表示改善】日付データテーブルの上に「社員コード ｜ 氏名　勤務実績：0/00日」を左詰めで追加。
+ * 変更点（v3.1.3）:
+ * - 【致命的バグ修正】新規登録時、表示月の桁数（1桁月/2桁月）によって不正な日付フォーマットがMySQLに送信されるJQueryのバグを完全修正。
+ * - 【表示改善】日付データテーブルの上に対象者の「社員コード ｜ 氏名　勤務実績：0/00日」を左詰めでスマートに追加。
  * - 【表示改善】編集ポップアップ（モーダル）内に対象社員名と日付を表示するメタ領域を追加。
  * - 【バグ修正】職種チップ（ソート）操作時、および「全OFF」選択での検索リロード後も選択State（状態）を100%完全に維持するロジックを搭載。
  * - 【機能拡張】データの有無に関わらず、すべての日に「登録 / 編集」ボタンを常時出力。空行からでも管理者がダイレクトに新規追加（INSERT）できるように改修。
@@ -419,13 +420,17 @@ function mat_history_page_render() {
         $(document).on('click', '.edit-log', function() {
             currentId = $(this).data('id');
             
-            // 新規インサート登録用に、日付ラベルから「YYYY-MM-DD」形式の送信値を逆算抽出
+            // 【バグ修正】表示月（YYYY-M、YYYY-MMどっちの環境でも）から安全にゼロ埋めスプリットしてパース逆算
             var dateLabel = $(this).data('date-label') || '';
             if (dateLabel) {
-                var currentMonth = $('input[name="view_month"]').val();
-                var dateMatch = dateLabel.match(/\/(\d{2})/);
+                var currentMonth = $('input[name="view_month"]').val(); // "2026-05" など
+                var dateMatch = dateLabel.match(/\/(\d{2})/); // 日("01"など)を抽出
                 if (dateMatch && currentMonth) {
-                    modalTargetDateYmd = currentMonth.substring(0, 4) + '-' + currentMonth.substring(5, 7) + '-' + dateMatch[1];
+                    var parts = currentMonth.split('-');
+                    var year = parts[0];
+                    var month = String(parts[1]).padStart(2, '0');
+                    var day = String(dateMatch[1]).padStart(2, '0');
+                    modalTargetDateYmd = year + '-' + month + '-' + day;
                 }
             }
 
@@ -464,7 +469,7 @@ function mat_history_page_render() {
             $(this).prop('disabled', true).text('保存中...');
             $.post(ajaxurl, {
                 action:        'mat_admin_edit_log',
-                id:            currentId, // 0の場合は新規登録、1以上なら編集UPDATE
+                id:            currentId, // 0の場合は新規登録INSERT、1以上なら編集UPDATE
                 employee_code: selectedEmpCode,       
                 work_date:     modalTargetDateYmd,    
                 clock_in:      $('#edit-in').val(),
