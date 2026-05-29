@@ -217,13 +217,13 @@ function mat_history_page_render() {
         </div>
 
         <?php if ( $selected_emp ) : ?>
-            <div class="mat-admin-selected-info-bar" style="margin: 20px 0 10px; padding: 12px 16px; background: #fff; border-left: 4px solid #2271b1; border-radius: 0 4px 4px 0; box-shadow: 0 1px 3px rgba(0,0,0,.05); font-size: 1.05em; font-weight: bold; color: #1d2327; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div class="mat-admin-selected-info-bar" style="margin: 20px 0 10px; padding: 12px 16px; background: #fff; border-left: 4px solid #2271b1; border-radius: 0 4px 4px 0; box-shadow: 0 1px 3px rgba(0,0,0,.05); font-size: 1.05em; font-weight: bold; color: #1d2327; display: flex; align-items: center; flex-wrap: wrap; gap: 20px;">
                 <div>
                     <span style="color: #2271b1;">[<?php echo esc_html( $selected_emp->employee_code ); ?>]</span> 
                     <span style="margin-left: 4px;"><?php echo esc_html( $selected_emp->name ); ?></span>
                 </div>
-                <div style="font-size: 0.95em; color: #50575e; font-weight: 600;">
-                    勤務実績：<strong style="color: #1d2327; font-size: 1.15em;"><?php echo esc_html( $work_days_count ); ?></strong> / <?php echo esc_html( $total_days ); ?> 日
+                <div style="font-size: 0.9em; color: #50575e; font-weight: 600;">
+                    勤務実績：<strong style="color: #1d2327; font-size: 1.1em;"><?php echo esc_html( $work_days_count ); ?></strong> / <?php echo esc_html( $total_days ); ?> 日
                 </div>
             </div>
 
