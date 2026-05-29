@@ -139,10 +139,21 @@ function mat_shortcode_render() {
             </div>
 
             <!-- 4. 備考 -->
-            <div class="mat-note-box">
-                <label class="mat-label">備考</label>
-                <textarea id="mat-note" class="mat-textarea" placeholder="備考があれば入力"></textarea>
-            </div>
+<div class="mat-note-box">
+    <label class="mat-label">備考（打刻ボタンと一緒に送信されます）</label>
+    <textarea id="mat-note" class="mat-textarea" placeholder="出勤・退勤・休憩と同時に送る備考"></textarea>
+</div>
+
+<!-- 4b. 備考のみ登録 -->
+<div class="mat-note-only-box">
+    <label class="mat-label">備考のみ登録（本日分を上書き保存）</label>
+    <textarea id="mat-note-only" class="mat-textarea" placeholder="例：早退、直行直帰など"></textarea>
+    <button id="mat-btn-save-note" class="mat-btn mat-btn-secondary mat-btn-full" style="margin-top:8px;">
+        📝 備考を登録する
+    </button>
+    <p class="mat-error" id="mat-error-note-only" style="display:none;"></p>
+    <p class="mat-success" id="mat-success-note-only" style="display:none;"></p>
+</div>
 
             <!-- 5. 打刻ログ -->
             <div class="mat-history-header">

@@ -302,6 +302,7 @@ jQuery(document).ready(function ($) {
         editTargetId = null;
         $('#mat-employee-code').val('');
         $('#mat-note').val('');
+        $('#mat-note-only').val('');
         $('#mat-paid-leave-date').val('');
         $('#mat-holiday-date').val('');
         showSection('mat-section-code');
@@ -310,6 +311,59 @@ jQuery(document).ready(function ($) {
     // =========================================================
     //  打刻処理（出勤・退勤・休憩）
     // =========================================================
+    // =========================================================
+//  備考のみ登録
+// =========================================================
+$('#mat-btn-save-note').on('click', function () {
+    var note = $.trim($('#mat-note-only').val());
+    clearError('mat-error-note-only');
+    clearSuccess('mat-success-note-only');
+
+    if (!note) {
+        setError('mat-error-note-only', '備考を入力してください。');
+        return;
+    }
+    if (!session.empMasterId) {
+        setError('mat-error-note-only', 'ログインしてください。');
+        return;
+    }
+    // 既存の備考がある場合に確認
+    var existingNote = '';
+    $('#mat-history-body tr').each(function () {
+        var dateYmd = $(this).data('date-ymd') || '';
+        if (dateYmd === matAjax.todayYmd) {
+            existingNote = $(this).find('td').eq(4).text().trim();
+        }
+    });
+    if (existingNote && existingNote !== '-') {
+        if (!confirm('本日の備考「' + existingNote + '」を上書きします。よろしいですか？')) return;
+    }
+
+    var $btn = $(this);
+    btnLoading($btn, true);
+
+    $.post(ajaxurl, {
+        action: 'mat_attendance_update',
+        emp_master_id: session.empMasterId,
+        employee_code: session.employeeCode,
+        label: '備考',
+        note: note,
+        nonce: nonce,
+    }, function (res) {
+        btnLoading($btn, false);
+        if (res.success) {
+            setSuccess('mat-success-note-only', '備考を登録しました ✓');
+            $('#mat-note-only').val('');
+            renderLogs(res.data);
+            setTimeout(function () { clearSuccess('mat-success-note-only'); }, 3000);
+        } else {
+            setError('mat-error-note-only', res.data);
+        }
+    }).fail(function () {
+        btnLoading($btn, false);
+        setError('mat-error-note-only', '通信エラーが発生しました。');
+    });
+});
     $(document).on('click', '.mat-punch-btn', function () {
         // ★ 二重送信ガード
         if (isSubmitting) return;
