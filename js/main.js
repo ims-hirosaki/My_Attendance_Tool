@@ -307,32 +307,38 @@ jQuery(document).ready(function ($) {
     // =========================================================
     //  打刻処理（出勤・退勤・休憩）
     // =========================================================
-    $(document).on('click', '.mat-punch-btn', function () {
-        if (isSubmitting) return;
+   // 【修正箇所】打刻処理（出勤・退勤・休憩）
+$(document).on('click', '.mat-punch-btn', function () {
+    if (isSubmitting) return;
 
-        var label = $(this).data('label');
+    var label = $(this).data('label');
 
-        if (!session.empMasterId) {
-            alert('ログインしてください。');
-            return;
-        }
+    if (!session.empMasterId) {
+        alert('ログインしてください。');
+        return;
+    }
 
-        if (label === '休憩' && session.hasBreak) {
-            if (!confirm('すでに休憩が登録されています。上書きしますか？')) return;
-        }
+    if (label === '休憩' && session.hasBreak) {
+        if (!confirm('すでに休憩が登録されています。上書きしますか？')) return;
+    }
 
-        var postData = {
-            action: 'mat_attendance_update',
-            emp_master_id: session.empMasterId,
-            employee_code: session.employeeCode,
-            label: label,
-            nonce: nonce,
-        };
+    // ★今回のバグ修正：現在入力されている（または裏で保持している）備考の値を確実に引き継ぐ
+    var noteValue = $.trim($('#mat-note').val());
 
-        if (label === '休憩') {
-            postData.break_hhmm = minsToHHMM($('#mat-break-slider').val());
-        }
+    var postData = {
+        action: 'mat_attendance_update',
+        emp_master_id: session.empMasterId,
+        employee_code: session.employeeCode,
+        label: label,
+        note: noteValue, // サーバー側に現在値を伝達
+        nonce: nonce,
+    };
 
+    if (label === '休憩') {
+        postData.break_hhmm = minsToHHMM($('#mat-break-slider').val());
+    }
+    
+    
         var $btn = $(this);
         btnLoading($btn, true);
         isSubmitting = true;
