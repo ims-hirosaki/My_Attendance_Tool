@@ -2,9 +2,10 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 /**
- * admin-settings.php  v3.1.3
+ * admin-settings.php  v3.1.4
  *
- * 変更点（v3.1.3）:
+ * 変更点（v3.1.4）:
+ * - 【仕様改善】管理画面アクセス時のデフォルト状態を、特定の社員ではなく「--- 従業員を選択してください ---」が初期選択される未選択状態に修正。
  * - 【致命的バグ修正】新規登録時、表示月の桁数（1桁月/2桁月）によって不正な日付フォーマットがMySQLに送信されるJQueryのバグを完全修正。
  * - 【表示改善】日付データテーブルの上に対象者の「社員コード ｜ 氏名　勤務実績：0/00日」を左詰めでスマートに追加。
  * - 【表示改善】編集ポップアップ（モーダル）内に対象社員名と日付を表示するメタ領域を追加。
@@ -161,21 +162,22 @@ function mat_history_page_render() {
         $job_type_names[] = $jt->name;
     }
 
-    $selected_code = isset( $_GET['employee_code'] )
-        ? sanitize_text_field( $_GET['employee_code'] )
-        : ( ! empty( $employees ) ? $employees[0]->employee_code : '' );
+    // ★【修正】初回アクセス時は自動選択させず、デフォルトを空（未選択状態）にする
+    $selected_code = isset( $_GET['employee_code'] ) ? sanitize_text_field( $_GET['employee_code'] ) : '';
 
     $view_month = isset( $_GET['view_month'] )
         ? sanitize_text_field( $_GET['view_month'] )
         : date( 'Y-m' );
 
-    // 【バグ修正】「全OFF」リロード時のState消失を防ぐフラグと送信配列の回収
+    // 「全OFF」リロード時のState消失を防ぐフラグと送信配列の回収
     $filter_applied = isset( $_GET['mat_filter_applied'] ) ? true : false;
     $saved_filters  = isset( $_GET['mat_filters'] ) ? array_map( 'sanitize_text_field', (array) $_GET['mat_filters'] ) : array();
 
     $selected_emp = null;
-    foreach ( $employees as $emp ) {
-        if ( $emp->employee_code === $selected_code ) { $selected_emp = $emp; break; }
+    if ( ! empty( $selected_code ) ) {
+        foreach ( $employees as $emp ) {
+            if ( $emp->employee_code === $selected_code ) { $selected_emp = $emp; break; }
+        }
     }
 
     $logs            = array();
@@ -300,6 +302,12 @@ function mat_history_page_render() {
                     <?php endif; ?>
                 </tbody>
             </table>
+        <?php else : ?>
+            <div class="notice notice-info inline" style="margin-top: 20px; padding: 16px;">
+                <p style="margin: 0; font-size: 14px; font-weight: 600; color: #1d2327;">
+                    💡 上記の従業員選択メニューから従業員を選択し、「表示」ボタンを押すと打刻履歴が表示されます。
+                </p>
+            </div>
         <?php endif; ?>
     </div>
 
@@ -336,17 +344,15 @@ function mat_history_page_render() {
     jQuery(function($) {
         var nonce    = '<?php echo wp_create_nonce( "mat_admin_nonce" ); ?>';
         var currentId = null;
-        var modalTargetDateYmd = ''; // 新規インサート登録用にパースした日付(YYYY-MM-DD)をホールドする変数
+        var modalTargetDateYmd = ''; 
 
         var selectedEmpCode = '<?php echo esc_js( $selected_emp ? $selected_emp->employee_code : '' ); ?>';
         var selectedEmpName = '<?php echo esc_js( $selected_emp ? $selected_emp->name : '' ); ?>';
 
-        // 職種チップフィルター用のマスタ展開
         var empData      = <?php echo wp_json_encode( $emp_js_data ); ?>;
         var jobTypeNames = <?php echo wp_json_encode( $job_type_names ); ?>;
         var activeTypes  = {};
 
-        // 【バグ修正】リロードや全OFF検索時にも職種チップの選択状態（State）を復元・追従するロジック
         var isFilterApplied = <?php echo $filter_applied ? 'true' : 'false'; ?>;
         var savedFilters    = <?php echo wp_json_encode($saved_filters); ?>;
         
@@ -386,11 +392,17 @@ function mat_history_page_render() {
                 $(this).prop('disabled', !show).toggle(show);
             });
 
-            // 【バグ修正】チップ切り替え時のブラウザ自動リセットに抗い、現在選択中の従業員Stateを厳密にロック
+            // 従業員が選ばれている場合のみStateを維持、未選択の時は「---選択してください---」のまま固定
             if (selectedEmpCode !== '') {
                 var $activeOpt = $sel.find('option[value="' + selectedEmpCode + '"]');
-                if ($activeOpt.length > 0 && !$activeOpt.prop('disabled')) { $sel.val(selectedEmpCode); } else { $sel.val(''); }
-            } else { $sel.val(''); }
+                if ($activeOpt.length > 0 && !$activeOpt.prop('disabled')) { 
+                    $sel.val(selectedEmpCode); 
+                } else { 
+                    $sel.val(''); 
+                }
+            } else {
+                $sel.val(''); // ★デフォルト未選択状態をホールド
+            }
         }
 
         applyChipStyles();
@@ -416,15 +428,13 @@ function mat_history_page_render() {
             $('#edit-in, #edit-out, #edit-break').prop('disabled', isHoliday).closest('tr').css('opacity', opacity);
         }
 
-        // 編集/登録ボタンクリック時（モーダル展開）
         $(document).on('click', '.edit-log', function() {
             currentId = $(this).data('id');
             
-            // 【バグ修正】表示月（YYYY-M、YYYY-MMどっちの環境でも）から安全にゼロ埋めスプリットしてパース逆算
             var dateLabel = $(this).data('date-label') || '';
             if (dateLabel) {
-                var currentMonth = $('input[name="view_month"]').val(); // "2026-05" など
-                var dateMatch = dateLabel.match(/\/(\d{2})/); // 日("01"など)を抽出
+                var currentMonth = $('input[name="view_month"]').val(); 
+                var dateMatch = dateLabel.match(/\/(\d{2})/); 
                 if (dateMatch && currentMonth) {
                     var parts = currentMonth.split('-');
                     var year = parts[0];
@@ -434,7 +444,6 @@ function mat_history_page_render() {
                 }
             }
 
-            // モーダル窓内にメタデータを流し込み
             if (selectedEmpCode !== '') { $('#mat-modal-meta-emp').text('[' + selectedEmpCode + '] ' + selectedEmpName); } else { $('#mat-modal-meta-emp').text('--'); }
             $('#mat-modal-meta-date').text(dateLabel || '--');
 
@@ -469,7 +478,7 @@ function mat_history_page_render() {
             $(this).prop('disabled', true).text('保存中...');
             $.post(ajaxurl, {
                 action:        'mat_admin_edit_log',
-                id:            currentId, // 0の場合は新規登録INSERT、1以上なら編集UPDATE
+                id:            currentId, 
                 employee_code: selectedEmpCode,       
                 work_date:     modalTargetDateYmd,    
                 clock_in:      $('#edit-in').val(),
