@@ -202,6 +202,7 @@ function mat_history_page_render() {
                 <input type="hidden" name="page" value="my-attendance-settings">
                 従業員：
                 <select name="employee_code" id="mat-employee-select">
+                    <option value="">--- 従業員を選択してください ---</option>
                     <?php foreach ( $employees as $emp ) : ?>
                         <option value="<?php echo esc_attr( $emp->employee_code ); ?>"
                             data-job-type="<?php echo esc_attr( isset( $emp->job_type_name ) ? $emp->job_type_name : '' ); ?>"
@@ -216,10 +217,15 @@ function mat_history_page_render() {
         </div>
 
         <?php if ( $selected_emp ) : ?>
-            <p style="margin-top:16px; font-size:1em;">
-                勤務実績：<strong><?php echo esc_html( $work_days_count ); ?></strong>
-                / <?php echo esc_html( $total_days ); ?> 日
-            </p>
+            <div class="mat-admin-selected-info-bar" style="margin: 20px 0 10px; padding: 12px 16px; background: #fff; border-left: 4px solid #2271b1; border-radius: 0 4px 4px 0; box-shadow: 0 1px 3px rgba(0,0,0,.05); font-size: 1.05em; font-weight: bold; color: #1d2327; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <span style="color: #2271b1;">[<?php echo esc_html( $selected_emp->employee_code ); ?>]</span> 
+                    <span style="margin-left: 4px;"><?php echo esc_html( $selected_emp->name ); ?></span>
+                </div>
+                <div style="font-size: 0.95em; color: #50575e; font-weight: 600;">
+                    勤務実績：<strong style="color: #1d2327; font-size: 1.15em;"><?php echo esc_html( $work_days_count ); ?></strong> / <?php echo esc_html( $total_days ); ?> 日
+                </div>
+            </div>
 
             <table class="widefat fixed striped" style="margin-top:8px;">
                 <thead>
@@ -257,8 +263,8 @@ function mat_history_page_render() {
                                         data-out="<?php echo esc_attr( $day['out'] ?? '' ); ?>"
                                         data-break="<?php echo esc_attr( $day['break'] ?? '00:00' ); ?>"
                                         data-notes="<?php echo esc_attr( is_array( $day['notes'] ) ? implode( ' / ', $day['notes'] ) : '' ); ?>"
-                                        data-holiday="<?php echo $is_holiday ? '1' : '0'; ?>">
-                                        編集
+                                        data-holiday="<?php echo $is_holiday ? '1' : '0'; ?>"
+                                        data-date-label="<?php echo esc_attr( $day['date'] ); ?>"> 編集
                                     </button>
                                     <?php else : ?>
                                         <span style="color:#ddd;font-size:0.8em;">-</span>
@@ -272,11 +278,16 @@ function mat_history_page_render() {
         <?php endif; ?>
     </div>
 
-    <!-- 編集モーダル -->
     <div id="mat-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
          z-index:9999;align-items:center;justify-content:center;">
-        <div style="background:#fff;border-radius:8px;padding:28px;width:440px;max-width:90%;">
-            <h3 style="margin:0 0 20px;">打刻データの編集</h3>
+        <div style="background:#fff;border-radius:8px;padding:28px;width:440px;max-width:90%; box-shadow: 0 4px 16px rgba(0,0,0,0.2);">
+            <h3 style="margin:0 0 14px; color:#2271b1;">打刻データの編集</h3>
+            
+            <div class="mat-modal-target-meta" style="margin-bottom: 18px; padding: 10px 14px; background: #f0f6fc; border-left: 4px solid #2271b1; border-radius: 0 4px 4px 0; font-size: 0.92em; line-height: 1.6; color: #1d2327; font-weight: 600;">
+                <div style="margin-bottom: 2px;">対象者：<span id="mat-modal-meta-emp" style="color: #1d2327;">--</span></div>
+                <div>対象日：<span id="mat-modal-meta-date" style="color: #2271b1;">--</span></div>
+            </div>
+
             <table class="form-table" style="margin:0;">
                 <tr><th>出勤</th><td><input type="time" id="edit-in" class="regular-text"></td></tr>
                 <tr><th>退勤</th><td><input type="time" id="edit-out" class="regular-text"></td></tr>
@@ -303,6 +314,10 @@ function mat_history_page_render() {
         var nonce    = '<?php echo wp_create_nonce( "mat_admin_nonce" ); ?>';
         var currentId = null;
 
+        // PHP側で選択済みの対象者名・コードをJavaScriptのスコープへ安全に退避
+        var selectedEmpCode = '<?php echo esc_js( $selected_emp ? $selected_emp->employee_code : '' ); ?>';
+        var selectedEmpName = '<?php echo esc_js( $selected_emp ? $selected_emp->name : '' ); ?>';
+
         // 職種チップフィルター
         var empData      = <?php echo wp_json_encode( $emp_js_data ); ?>;
         var jobTypeNames = <?php echo wp_json_encode( $job_type_names ); ?>;
@@ -323,17 +338,36 @@ function mat_history_page_render() {
                 });
             });
         }
+
+        // 【バグ修正】ソートチップ操作時の状態（State）整合性維持ロジック
         function filterEmployees() {
             var $sel = $('#mat-employee-select');
+            
             $sel.find('option').each(function() {
+                var val = $(this).val();
+                if (val === '') return; // 初期値オプションはスキップ
+                
                 var jt = $(this).data('job-type') || '';
                 var show = jt === '' || activeTypes[jt] !== false;
                 $(this).prop('disabled', !show).toggle(show);
             });
-            if ( $sel.find('option:selected').prop('disabled') ) {
-                $sel.find('option:not(:disabled)').first().prop('selected', true);
+
+            // チップ切り替えによって現在表示中の従業員が非表示（disabled）になったり、
+            // 意図しないデフォルト値（リストの先頭の人）に勝手にリセットされないよう厳密にホールド
+            if (selectedEmpCode !== '') {
+                var $activeOpt = $sel.find('option[value="' + selectedEmpCode + '"]');
+                // 選択中の社員が絞り込み内に存在していれば、その選択状態（State）を強制維持
+                if ($activeOpt.length > 0 && !$activeOpt.prop('disabled')) {
+                    $sel.val(selectedEmpCode);
+                } else {
+                    // 選択中の社員が完全に絞り込み対象外になった場合のみ、先頭の「---選択する---」に戻す
+                    $sel.val('');
+                }
+            } else {
+                $sel.val('');
             }
         }
+
         applyChipStyles();
         filterEmployees();
 
@@ -341,7 +375,7 @@ function mat_history_page_render() {
             var jt = $(this).data('job-type');
             activeTypes[jt] = !activeTypes[jt];
             applyChipStyles();
-            filterEmployees();
+            filterEmployees(); // ここでStateが維持される
         });
         $('#mat-chip-all-on').on('click', function() {
             jobTypeNames.forEach(function(jt) { activeTypes[jt] = true; });
@@ -359,9 +393,18 @@ function mat_history_page_render() {
                 .closest('tr').css('opacity', opacity);
         }
 
-        // 編集ボタン
+        // 編集ボタン（ポップアップ窓）
         $(document).on('click', '.edit-log', function() {
             currentId = $(this).data('id');
+            
+            // 【仕様追加】モーダル内のメタ情報エリアに対象者データと日付データを流し込む
+            if (selectedEmpCode !== '') {
+                $('#mat-modal-meta-emp').text('[' + selectedEmpCode + '] ' + selectedEmpName);
+            } else {
+                $('#mat-modal-meta-emp').text('--');
+            }
+            $('#mat-modal-meta-date').text($(this).data('date-label') || '--');
+
             $('#edit-in').val($(this).data('in') || '');
             $('#edit-out').val($(this).data('out') || '');
             $('#edit-break').val($(this).data('break') || '00:00');
