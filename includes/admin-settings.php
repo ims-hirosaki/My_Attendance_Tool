@@ -148,8 +148,9 @@ function mat_history_page_render() {
         ? sanitize_text_field( $_GET['view_month'] )
         : date( 'Y-m' );
 
-    // ★【新仕様】送信されたフィルターの状態を回収（未送信ならデフォルト値を設定）
-    $saved_filters = isset( $_GET['mat_filters'] ) ? array_map( 'sanitize_text_field', (array) $_GET['mat_filters'] ) : null;
+    // ★【バグ修正】「全OFF」をホールドするための判定フラグ
+    $filter_applied = isset( $_GET['mat_filter_applied'] ) ? true : false;
+    $saved_filters  = isset( $_GET['mat_filters'] ) ? array_map( 'sanitize_text_field', (array) $_GET['mat_filters'] ) : array();
 
     $selected_emp = null;
     foreach ( $employees as $emp ) {
@@ -203,6 +204,8 @@ function mat_history_page_render() {
 
             <form method="get" id="mat-filter-form">
                 <input type="hidden" name="page" value="my-attendance-settings">
+                
+                <input type="hidden" name="mat_filter_applied" value="1">
                 
                 <div id="mat-hidden-filter-inputs"></div>
 
@@ -329,16 +332,17 @@ function mat_history_page_render() {
         var jobTypeNames = <?php echo wp_json_encode( $job_type_names ); ?>;
         var activeTypes  = {};
 
-        // ★【ここを全面修正】URLからリロード前の状態を引き継ぐ
-        var savedFilters = <?php echo $saved_filters !== null ? wp_json_encode($saved_filters) : 'null'; ?>;
+        // ★【バグ修正】固定フラグ（mat_filter_applied）の有無を基準にする
+        var isFilterApplied = <?php echo $filter_applied ? 'true' : 'false'; ?>;
+        var savedFilters    = <?php echo wp_json_encode($saved_filters); ?>;
         
-        if (savedFilters !== null) {
-            // 前回の送信データがあれば、それをStateとして完全再現
+        if (isFilterApplied) {
+            // 一度でも送信されていれば（全OFF含め）、送られてきた配列の状態を100%再現（空配列ならすべてのStateがfalseになる）
             jobTypeNames.forEach(function(jt) {
                 activeTypes[jt] = savedFilters.indexOf(jt) !== -1;
             });
         } else {
-            // 初回表示時のみのデフォルト初期値
+            // 初回プラグイン管理画面を開いた時のみのデフォルト初期値
             jobTypeNames.forEach(function(jt) {
                 activeTypes[jt] = (jt !== '長距離' && jt !== '郵便');
             });
@@ -353,11 +357,9 @@ function mat_history_page_render() {
                     color:      on ? '#fff'     : '#2271b1',
                 });
             });
-            // 【新仕様】フォーム送信用の隠しinputタグをリアルタイム同期更新
             updateHiddenFields();
         }
 
-        // 選択されているチップをformのパラメータに変換する処理
         function updateHiddenFields() {
             var $container = $('#mat-hidden-filter-inputs').empty();
             Object.keys(activeTypes).forEach(function(jt) {
