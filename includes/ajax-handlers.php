@@ -370,7 +370,7 @@ function mat_attendance_update_handler() {
         if ( $row ) {
             // 【重要】備考先入れ後に一回出勤ボタンが押された場合
             $wpdb->update( MAT_DAILY_TABLE,
-                array( 'clock_in' => $now_time, 'note' => $final_note ?: null ),
+                array( 'clock_in' => $now_time),
                 array( 'id' => (int) $row->id )
             );
         } else {
@@ -392,7 +392,7 @@ function mat_attendance_update_handler() {
         }
 
         $wpdb->update( MAT_DAILY_TABLE,
-            array( 'clock_out' => $now_time, 'note' => $final_note ?: null ),
+            array( 'clock_out' => $now_time ),
             array( 'id' => (int) $row->id )
         );
 
@@ -408,7 +408,7 @@ function mat_attendance_update_handler() {
         }
 
         $wpdb->update( MAT_DAILY_TABLE,
-            array( 'break_minutes' => $break_minutes, 'note' => $final_note ?: null ),
+            array( 'break_minutes' => $break_minutes ),
             array( 'id' => (int) $row->id )
         );
 

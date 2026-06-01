@@ -487,7 +487,7 @@ jQuery(document).ready(function ($) {
     }
 
     function renderLogs(data) {
-        if (data && data.today_ymd) matAjax.todayYmd = data.todayYmd;
+        if (data && data.today_ymd) matAjax.todayYmd = data.today_ymd;
         if (!data.logs || data.logs.length === 0) {
             $('#mat-history-body').html('<tr><td colspan="7" class="mat-loading">データがありません。</td></tr>');
             refreshPunchButtons();
