@@ -358,21 +358,6 @@ function mat_attendance_update_handler() {
 
     // 備考欄に何をセットするか決定（バグ対策：既存の備考が存在する場合は消さずに保持・マージ）
     $existing_note = $row ? $row->note : null;
-    if ( ! empty( $note_input ) ) {
-        // 新しい入力がある場合、既存の備考と重複していなければ結合、空なら新規設定
-        if ( ! empty( $existing_note ) ) {
-            if ( strpos( $existing_note, $note_input ) === false ) {
-                $final_note = $existing_note . ' / ' . $note_input;
-            } else {
-                $final_note = $existing_note; // すでに含まれているなら既存を維持
-            }
-        } else {
-            $final_note = $note_input;
-        }
-    } else {
-        // フロントから送られた備考が空の場合、既存の備考データをそのまま引き継ぐ（上書き消滅防止）
-        $final_note = $existing_note;
-    }
 
     if ( $label === '出勤' ) {
         if ( $row && $row->is_holiday ) {

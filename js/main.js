@@ -259,14 +259,12 @@ jQuery(document).ready(function ($) {
         }
 
         // ★【バグ修正】現在入力ボックスにある備考データを送信パラメータとして引き連れる
-        var noteValue = $.trim($('#mat-note').val());
 
         var postData = {
             action: 'mat_attendance_update',
             emp_master_id: session.empMasterId,
             employee_code: session.employeeCode,
             label: label,
-            note: noteValue, 
             nonce: nonce,
         };
 
@@ -340,13 +338,13 @@ jQuery(document).ready(function ($) {
     function applyPunchButtons(status) {
         if (!status) return;
 
-        var hasClockin  = !!status.has_clockin;
+        var hasClockin = !!status.has_clockin;
         var hasClockout = !!status.has_clockout;
-        var isHoliday   = !!status.is_holiday;
+        var isHoliday = !!status.is_holiday;
         session.hasBreak = !!status.has_break_time;
-        session.hasNote  = !!status.has_notes;
+        session.hasNote = !!status.has_notes;
 
-        var $btnIn  = $('.mat-wrap [data-label="出勤"]');
+        var $btnIn = $('.mat-wrap [data-label="出勤"]');
         var $btnOut = $('.mat-wrap [data-label="退勤"]');
 
         if (isHoliday || hasClockin) {
@@ -464,7 +462,7 @@ jQuery(document).ready(function ($) {
             $('#mat-paid-leave-body').html('<tr><td colspan="3" class="mat-loading">申請はありません。</td></tr>');
             return;
         }
-        var statusClass = { 'pending':  'mat-status-pending', 'approved': 'mat-status-approved', 'rejected': 'mat-status-rejected' };
+        var statusClass = { 'pending': 'mat-status-pending', 'approved': 'mat-status-approved', 'rejected': 'mat-status-rejected' };
         var html = '';
         $.each(requests, function (_, r) {
             var cls = statusClass[r.status_key] || '';
@@ -499,8 +497,8 @@ jQuery(document).ready(function ($) {
         var html = '';
         $.each(data.logs, function (_, row) {
             var isHoliday = !!row.is_holiday;
-            var hasData   = !!row.has_data;
-            var rowStyle  = isHoliday ? ' style="background:#fff8e1;"' : !hasData ? ' style="background:#fafafa;color:#bbb;"' : '';
+            var hasData = !!row.has_data;
+            var rowStyle = isHoliday ? ' style="background:#fff8e1;"' : !hasData ? ' style="background:#fafafa;color:#bbb;"' : '';
 
             html += '<tr data-id="' + row.id + '"' + rowStyle + '>';
             html += '<td>' + esc(row.date) + '</td>';
@@ -509,7 +507,7 @@ jQuery(document).ready(function ($) {
                 html += '<td>-</td><td>-</td><td>-</td><td>-</td><td style="text-align:center;font-size:.9em;">🗓 休日</td>';
                 if (allowLogEdit) html += '<td style="color:#ccc;font-size:.8em;">-</td>';
             } else {
-                html += '<td>' + esc(row.in  || '-') + '</td>';
+                html += '<td>' + esc(row.in || '-') + '</td>';
                 html += '<td>' + esc(row.out || '-') + '</td>';
                 html += '<td>' + esc(row.break || '-') + '</td>';
                 var notes = Array.isArray(row.notes) ? row.notes.join(' / ') : '';
@@ -558,10 +556,10 @@ jQuery(document).ready(function ($) {
             action: 'mat_edit_log',
             id: editTargetId,
             emp_master_id: session.empMasterId,
-            clock_in:   $('#mat-edit-in').val(),
-            clock_out:  $('#edit-out').val(),
+            clock_in: $('#mat-edit-in').val(),
+            clock_out: $('#edit-out').val(),
             break_time: $('#mat-edit-break').val(),
-            note:       $('#mat-edit-note').val(),
+            note: $('#mat-edit-note').val(),
             nonce: nonce,
         }, function (res) {
             btnLoading($('#mat-edit-save'), false);
