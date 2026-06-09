@@ -21,7 +21,7 @@ function mat_register_admin_menu() {
     add_menu_page(
         '打刻ツール', '打刻ツール', 'manage_options',
         'my-attendance-settings', 'mat_history_page_render',
-        'dashicons-calendar-alt', 30
+        'dashicons-clock', 30
     );
     add_submenu_page(
         'my-attendance-settings', '打刻', '打刻', 'manage_options',
