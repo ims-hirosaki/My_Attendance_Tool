@@ -14,34 +14,9 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 // =========================================================
 
 function mat_is_in_current_period( $date_ymd ) {
-    $closing = (int) mat_get_setting( 'closing_day', 0 );
-    $today   = current_time( 'Y-m-d' );
+    $period = mat_get_current_period();
 
-    if ( $closing === 0 ) {
-        // 末日締め → 今月のみ編集可
-        return substr( $date_ymd, 0, 7 ) === substr( $today, 0, 7 );
-    }
-
-    // 締め日締め → 前回締め日翌日〜今回締め日まで
-    $y = (int) date( 'Y', strtotime( $today ) );
-    $m = (int) date( 'm', strtotime( $today ) );
-    $d = (int) date( 'd', strtotime( $today ) );
-
-    if ( $d <= $closing ) {
-        // 今月の締め日前 → 先月締め日翌日〜今月締め日
-        $prev_m = $m === 1 ? 12 : $m - 1;
-        $prev_y = $m === 1 ? $y - 1 : $y;
-        $period_start = sprintf( '%04d-%02d-%02d', $prev_y, $prev_m, $closing + 1 );
-        $period_end   = sprintf( '%04d-%02d-%02d', $y, $m, $closing );
-    } else {
-        // 今月の締め日後 → 今月締め日翌日〜来月締め日
-        $next_m = $m === 12 ? 1 : $m + 1;
-        $next_y = $m === 12 ? $y + 1 : $y;
-        $period_start = sprintf( '%04d-%02d-%02d', $y, $m, $closing + 1 );
-        $period_end   = sprintf( '%04d-%02d-%02d', $next_y, $next_m, $closing );
-    }
-
-    return $date_ymd >= $period_start && $date_ymd <= $period_end;
+    return $date_ymd >= $period['start'] && $date_ymd <= $period['end'];
 }
 
 // =========================================================

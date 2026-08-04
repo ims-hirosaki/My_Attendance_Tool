@@ -83,3 +83,45 @@ function mat_get_setting( $key, $default = false ) {
     }
     return $value;
 }
+
+/**
+ * 締め日設定に基づく現在の集計期間を取得する。
+ *
+ * @param string|null $date_ymd 基準日（Y-m-d）。省略時は WordPress の現在日。
+ * @return array{start:string,end:string}
+ */
+function mat_get_current_period( $date_ymd = null ) {
+    $closing = (int) mat_get_setting( 'closing_day', 0 );
+    $today   = $date_ymd ?: current_time( 'Y-m-d' );
+    $time    = strtotime( $today );
+    $year    = (int) date( 'Y', $time );
+    $month   = (int) date( 'm', $time );
+    $day     = (int) date( 'd', $time );
+
+    if ( $closing === 0 ) {
+        return array(
+            'start' => sprintf( '%04d-%02d-01', $year, $month ),
+            'end'   => date( 'Y-m-t', $time ),
+        );
+    }
+
+    if ( $day <= $closing ) {
+        $previous_month = strtotime( 'first day of previous month', $time );
+        $previous_close = strtotime(
+            date( 'Y-m-', $previous_month ) . sprintf( '%02d', $closing )
+        );
+
+        return array(
+            'start' => date( 'Y-m-d', strtotime( '+1 day', $previous_close ) ),
+            'end'   => sprintf( '%04d-%02d-%02d', $year, $month, $closing ),
+        );
+    }
+
+    $next_month = strtotime( 'first day of next month', $time );
+    $current_close = strtotime( sprintf( '%04d-%02d-%02d', $year, $month, $closing ) );
+
+    return array(
+        'start' => date( 'Y-m-d', strtotime( '+1 day', $current_close ) ),
+        'end'   => date( 'Y-m-', $next_month ) . sprintf( '%02d', $closing ),
+    );
+}
