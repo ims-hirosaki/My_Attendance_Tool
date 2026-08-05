@@ -2,14 +2,14 @@
 /*
 Plugin Name: My Attendance Tool
 Description: 出退勤を記録するツール。employee-manager と連携して動作します。
-Version: 3.1.0
+Version: 3.2.0
 Author: 株式会社Ｉ・Ｍ・Ｓ
 */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 // ===== 定数定義 =====
-define( 'MAT_VERSION',  '3.1.0' );
+define( 'MAT_VERSION',  '3.2.0' );
 define( 'MAT_PATH',     plugin_dir_path( __FILE__ ) );
 define( 'MAT_URL',      plugin_dir_url( __FILE__ ) );
 
@@ -18,13 +18,19 @@ global $wpdb;
 define( 'MAT_LOG_TABLE',   $wpdb->prefix . 'my_attendance_logs' );   // 旧テーブル（移行完了まで維持）
 define( 'MAT_AUTH_TABLE',  $wpdb->prefix . 'my_attendance_auth' );
 define( 'MAT_DAILY_TABLE', $wpdb->prefix . 'mat_attendance_daily' ); // 新テーブル（v3.1.0〜）
+define( 'MAT_BREAK_MASTER_TABLE', $wpdb->prefix . 'mat_break_master' ); // 休憩時間マスタ（v3.2.0〜）
+define( 'MAT_WORK_REQUEST_TABLE', $wpdb->prefix . 'mat_work_request' ); // 例外休憩・残業の申請（v3.2.0〜）
 
 // ===== ファイル読み込み =====
+require_once MAT_PATH . 'includes/mat-core.php';       // 丸め込み・休憩マスタ・アラートの共通ロジック
 require_once MAT_PATH . 'includes/database-setup.php';
 require_once MAT_PATH . 'includes/ajax-handlers.php';
+require_once MAT_PATH . 'includes/admin-alert-modal.php'; // 履歴／アラート一覧で共用する修正モーダル
 require_once MAT_PATH . 'includes/admin-settings.php';
 require_once MAT_PATH . 'includes/admin-auth-management.php';
 require_once MAT_PATH . 'includes/admin-settings-page.php';
+require_once MAT_PATH . 'includes/admin-break-master.php'; // 休憩マスタ登録UI
+require_once MAT_PATH . 'includes/admin-alert-list.php';   // アラート一覧ページ
 require_once MAT_PATH . 'includes/admin-test-data.php';
 require_once MAT_PATH . 'includes/admin-csv-import.php';
 require_once MAT_PATH . 'includes/admin-migrate.php'; // フェーズ1〜3 移行ツール

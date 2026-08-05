@@ -712,3 +712,61 @@ input[type="date"].mat-input {
         padding: 5px 3px;
     }
 }
+/* =============================================================
+   v3.2.0 追加：休憩マスタ連動スライダー／退勤ポップアップ
+   ============================================================= */
+
+/* 休憩スライダーのラベル（マスタの label を表示） */
+.mat-break-label {
+    margin: -4px 0 12px;
+    font-size: 0.85em;
+    color: var(--mat-muted);
+    text-align: center;
+    min-height: 1.2em;
+}
+
+/* 日跨ぎ識別マーク */
+.mat-overnight-mark {
+    font-size: 0.9em;
+    margin-left: 2px;
+}
+
+/* ポップアップ本文 */
+.mat-modal-text {
+    font-size: 0.9em;
+    line-height: 1.7;
+    color: var(--mat-text);
+    margin: 0 0 16px;
+    padding: 10px 12px;
+    background: var(--mat-bg);
+    border-radius: 6px;
+}
+
+/* ポップアップ内のラジオ選択行 */
+.mat-radio-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.9em;
+    font-weight: bold;
+    color: var(--mat-text);
+    margin: 12px 0 6px;
+    cursor: pointer;
+    line-height: 1.5;
+}
+
+.mat-radio-row input[type="radio"] {
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+#mat-be-reason,
+#mat-ot-reason {
+    margin-left: 22px;
+    width: calc(100% - 22px);
+}
+
+#mat-ot-time {
+    margin-left: 22px;
+    width: calc(100% - 22px);
+}

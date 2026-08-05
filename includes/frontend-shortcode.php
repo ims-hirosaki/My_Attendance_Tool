@@ -21,6 +21,19 @@ function mat_shortcode_render() {
         true
     );
 
+    // 休憩スライダーの離散ステップ（休憩マスタ・sort_order 昇順）
+    $break_master  = mat_get_break_master();
+    $break_steps   = array();
+    $default_index = 0;
+    foreach ( $break_master as $i => $bm ) {
+        $break_steps[] = array(
+            'id'      => (int) $bm->id,
+            'label'   => $bm->label,
+            'minutes' => (int) $bm->break_minutes,
+        );
+        if ( (int) $bm->is_default === 1 ) $default_index = $i;
+    }
+
     wp_localize_script( 'mat-js', 'matAjax', array(
         'ajaxurl'              => admin_url( 'admin-ajax.php' ),
         'nonce'                => wp_create_nonce( 'mat_nonce' ),
@@ -29,6 +42,9 @@ function mat_shortcode_render() {
         'usePaidLeaveApproval' => mat_get_setting( 'use_paid_leave_approval', true ) ? '1' : '0',
         'allowLogEdit'         => mat_get_setting( 'allow_log_edit', false )      ? '1' : '0',
         'showPaidLeaveRequest' => mat_get_setting( 'show_paid_leave_request', true ) ? '1' : '0',
+        'breakSteps'           => $break_steps,
+        'breakDefaultIndex'    => $default_index,
+        'timeUnit'             => mat_get_time_unit(),
     ) );
 
     ob_start();
@@ -125,15 +141,17 @@ function mat_shortcode_render() {
                     data-label="退勤">退勤</button>
             </div>
 
-            <!-- 3. 休憩 -->
+            <!-- 3. 休憩（休憩マスタ連動の離散スライダー） -->
             <div class="mat-break-box">
                 <div class="mat-break-header">
                     <span>休憩時間</span>
-                    <span class="mat-break-value" id="mat-break-display">01:00</span>
+                    <span class="mat-break-value" id="mat-break-display">--</span>
                 </div>
                 <input type="range" id="mat-break-slider"
                     class="mat-range"
-                    min="0" max="180" step="1" value="60">
+                    min="0" max="<?php echo esc_attr( max( 0, count( $break_steps ) - 1 ) ); ?>"
+                    step="1" value="<?php echo esc_attr( $default_index ); ?>">
+                <p class="mat-break-label" id="mat-break-label"></p>
                 <button class="mat-btn mat-btn-break mat-punch-btn mat-btn-full"
                     data-label="休憩">休憩を登録</button>
             </div>
@@ -257,6 +275,74 @@ function mat_shortcode_render() {
     <button type="button" id="mat-edit-cancel" class="mat-btn mat-btn-secondary">キャンセル</button>
     <button type="button" id="mat-edit-save" class="mat-btn mat-btn-primary">💾 保存する</button>
 </div>
+            </div>
+        </div>
+
+        <!-- ======================== ① 日跨ぎ確認ポップアップ ======================== -->
+        <div class="mat-modal" id="mat-overnight-modal" style="display:none;">
+            <div class="mat-modal-inner">
+                <h3 class="mat-modal-title">前日の退勤打刻が未完了です</h3>
+                <p class="mat-modal-text" id="mat-overnight-text"></p>
+                <div class="mat-modal-actions">
+                    <button type="button" id="mat-overnight-cancel" class="mat-btn mat-btn-secondary">キャンセル</button>
+                    <button type="button" id="mat-overnight-ok" class="mat-btn mat-btn-primary">前日の退勤として登録</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ======================== ② 例外休憩ポップアップ ======================== -->
+        <div class="mat-modal" id="mat-break-exception-modal" style="display:none;">
+            <div class="mat-modal-inner">
+                <h3 class="mat-modal-title">休憩時間がイレギュラーです</h3>
+                <p class="mat-modal-text">
+                    選択された休憩時間：<strong id="mat-be-selected">--</strong><br>
+                    基準の休憩時間　　：<strong id="mat-be-standard">--</strong>
+                </p>
+
+                <label class="mat-radio-row">
+                    <input type="radio" name="mat-be-choice" value="request" checked>
+                    例外休憩を申請して登録する
+                </label>
+                <textarea id="mat-be-reason" class="mat-textarea" rows="2"
+                    placeholder="理由（必須）"></textarea>
+
+                <label class="mat-radio-row">
+                    <input type="radio" name="mat-be-choice" value="fix">
+                    休憩時間を<span id="mat-be-fix-label">基準</span>に修正して登録する
+                </label>
+
+                <p class="mat-error" id="mat-be-error" style="display:none;"></p>
+                <div class="mat-modal-actions">
+                    <button type="button" id="mat-be-cancel" class="mat-btn mat-btn-secondary">キャンセル</button>
+                    <button type="button" id="mat-be-ok" class="mat-btn mat-btn-primary">登録</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ======================== ③ 残業確認ポップアップ ======================== -->
+        <div class="mat-modal" id="mat-overtime-modal" style="display:none;">
+            <div class="mat-modal-inner">
+                <h3 class="mat-modal-title">残業時間が発生しています</h3>
+                <p class="mat-modal-text" id="mat-ot-summary"></p>
+
+                <label class="mat-radio-row">
+                    <input type="radio" name="mat-ot-choice" value="request" checked>
+                    残業を申請して登録する
+                </label>
+                <textarea id="mat-ot-reason" class="mat-textarea" rows="2"
+                    placeholder="理由（必須）"></textarea>
+
+                <label class="mat-radio-row">
+                    <input type="radio" name="mat-ot-choice" value="fix">
+                    退勤時刻を修正する
+                </label>
+                <input type="time" id="mat-ot-time" class="mat-input">
+
+                <p class="mat-error" id="mat-ot-error" style="display:none;"></p>
+                <div class="mat-modal-actions">
+                    <button type="button" id="mat-ot-cancel" class="mat-btn mat-btn-secondary">キャンセル</button>
+                    <button type="button" id="mat-ot-ok" class="mat-btn mat-btn-primary">登録</button>
+                </div>
             </div>
         </div>
 
