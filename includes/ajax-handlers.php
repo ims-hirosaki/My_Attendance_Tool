@@ -2,9 +2,15 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 /**
- * ajax-handlers.php  v3.1.1
+ * ajax-handlers.php  v3.2.0
  *
- * 変更点:
+ * 変更点（v3.2.0）:
+ * - 出勤／退勤打刻時に丸め込み後の始業・終業（rounded_clock_in / rounded_clock_out）を同時保存。
+ * - 日跨ぎ退勤（前日行への 25:10:00 形式での保存）に対応。
+ * - 休憩マスタ連動（break_master_id）と、例外休憩・残業の申請登録に対応。
+ * - 退勤前の判定情報を返す mat_prepare_clockout を追加。
+ *
+ * 変更点（v3.1.1）:
  * - 【フロント側バグ修正】備考が先入れされている状態で出勤・退勤・休憩ボタンが押された際、
  * 既存の備考（note）が空で上書きされて消滅しないようサーバー側で既存データを保護・マージするロジックを実装。
  */
@@ -73,6 +79,18 @@ function mat_get_date_row( $emp_master_id, $date_ymd ) {
 
 function mat_get_today_punch_status( $emp_master_id ) {
     $row = mat_get_today_row( $emp_master_id );
+
+    // 日跨ぎ退勤の待機状態（当日に出勤なし／前日が退勤未済／正午以前）。
+    // この場合は当日に出勤打刻が無くても退勤ボタンを押せるようにする（§5.3①）。
+    $pending_overnight = false;
+    if ( ! $row || is_null( $row->clock_in ) ) {
+        $prev = mat_get_date_row( $emp_master_id, date( 'Y-m-d', strtotime( current_time( 'Y-m-d' ) . ' -1 day' ) ) );
+        $pending_overnight = $prev
+            && ! is_null( $prev->clock_in )
+            && is_null( $prev->clock_out )
+            && mat_parse_time_to_minutes( current_time( 'H:i' ) ) <= 720;
+    }
+
     if ( ! $row ) {
         return array(
             'is_holiday'      => false,
@@ -81,6 +99,7 @@ function mat_get_today_punch_status( $emp_master_id ) {
             'has_break_time'  => false,
             'has_meaningful_data' => false,
             'has_notes'       => false,
+            'pending_overnight' => $pending_overnight,
         );
     }
     return array(
@@ -90,6 +109,7 @@ function mat_get_today_punch_status( $emp_master_id ) {
         'has_break_time'      => ! is_null( $row->break_minutes ) && (int) $row->break_minutes > 0,
         'has_meaningful_data' => true,
         'has_notes'           => ! is_null( $row->note ) && trim( $row->note ) !== '',
+        'pending_overnight'   => $pending_overnight,
     );
 }
 
@@ -131,32 +151,59 @@ function mat_get_grouped_data( $emp_master_id, $month = null ) {
         if ( ! $r ) {
             // データなし → 空行（JS側で '-' 表示）
             $logs[] = array(
-                'id'         => 0,
-                'date'       => $date_label,
-                'date_ymd'   => $ymd,
-                'in'         => null,
-                'out'        => null,
-                'break'      => null,
-                'notes'      => array(),
-                'paid_leave' => null,
-                'is_holiday' => false,
-                'can_edit'   => false,
-                'has_data'   => false,
+                'id'           => 0,
+                'date'         => $date_label,
+                'date_ymd'     => $ymd,
+                'in'           => null,
+                'out'          => null,
+                'break'        => null,
+                'rounded_in'   => null,
+                'rounded_out'  => null,
+                'overtime'     => null,
+                'is_overnight' => false,
+                'notes'        => array(),
+                'paid_leave'   => null,
+                'is_holiday'   => false,
+                'can_edit'     => false,
+                'has_data'     => false,
             );
             continue;
         }
 
         $is_holiday = (bool) $r->is_holiday;
 
+        $rounded_in   = null;
+        $rounded_out  = null;
+        $overtime     = null;
+        $is_overnight = false;
+
         if ( $is_holiday ) {
             $in    = '休日';
             $out   = null;
             $break = null;
         } else {
-            // TIME型は "HH:MM:SS" で返るので先頭5文字
-            $in    = $r->clock_in    ? substr( $r->clock_in,  0, 5 ) : null;
-            $out   = $r->clock_out   ? substr( $r->clock_out, 0, 5 ) : null;
+            // TIME型は "HH:MM:SS" で返るので先頭5文字。24時間超（25:10）もそのまま表示する。
+            $in    = $r->clock_in  ? mat_format_time_display( $r->clock_in )  : null;
             $break = mat_minutes_to_hhmm( $r->break_minutes );
+
+            // 実打刻の退勤：日跨ぎは 24時間超表記に変換（§5.4）
+            $out_min = mat_parse_time_to_minutes( $r->clock_out );
+            $in_min  = mat_parse_time_to_minutes( $r->clock_in );
+            if ( $out_min !== null && $in_min !== null && $out_min <= $in_min ) $out_min += 1440;
+            $out = $out_min === null ? null : mat_minutes_to_hm( $out_min );
+
+            $is_overnight = ! empty( $r->is_overnight ) || ( $out_min !== null && $out_min >= 1440 );
+
+            $rounded_in  = mat_format_time_display( $r->rounded_clock_in  ?? null ) ?: null;
+            $rounded_out = mat_format_time_display( $r->rounded_clock_out ?? null ) ?: null;
+
+            $calc     = mat_calc_work_minutes(
+                $r->rounded_clock_in  ?? $r->clock_in,
+                $r->rounded_clock_out ?? $r->clock_out,
+                $r->break_minutes
+            );
+            $overtime = $calc['overtime'];
+
             if ( $in ) $work_days_count++;
         }
 
@@ -165,17 +212,21 @@ function mat_get_grouped_data( $emp_master_id, $month = null ) {
             && mat_is_in_current_period( $ymd );
 
         $logs[] = array(
-            'id'         => (int) $r->id,
-            'date'       => $date_label,
-            'date_ymd'   => $ymd,
-            'in'         => $in,
-            'out'        => $out,
-            'break'      => $break,
-            'notes'      => $r->note ? array( $r->note ) : array(),
-            'paid_leave' => null,
-            'is_holiday' => $is_holiday,
-            'can_edit'   => $can_edit,
-            'has_data'   => true,
+            'id'           => (int) $r->id,
+            'date'         => $date_label,
+            'date_ymd'     => $ymd,
+            'in'           => $in,
+            'out'          => $out,
+            'break'        => $break,
+            'rounded_in'   => $rounded_in,
+            'rounded_out'  => $rounded_out,
+            'overtime'     => $overtime ? mat_minutes_to_hm( $overtime ) : null,
+            'is_overnight' => $is_overnight,
+            'notes'        => $r->note ? array( $r->note ) : array(),
+            'paid_leave'   => null,
+            'is_holiday'   => $is_holiday,
+            'can_edit'     => $can_edit,
+            'has_data'     => true,
         );
     }
 
@@ -306,6 +357,153 @@ function mat_request_password_reset_handler() {
 }
 
 // =========================================================
+//  2-0. 退勤前の判定（日跨ぎ／例外休憩／残業ポップアップ用）
+//       要件定義書 §5.3
+// =========================================================
+
+/**
+ * 退勤対象の行と退勤時刻（分）を決定する。
+ *
+ * @return array|WP_Error array( 'row' => object, 'clock_out_min' => int, 'is_overnight' => bool )
+ */
+function mat_resolve_clockout_target( $emp_master_id, $override_hhmm = '', $forced_date = '' ) {
+    $today    = current_time( 'Y-m-d' );
+    $now_min  = mat_parse_time_to_minutes( current_time( 'H:i' ) );
+    $prev_ymd = date( 'Y-m-d', strtotime( $today . ' -1 day' ) );
+
+    $today_row = mat_get_date_row( $emp_master_id, $today );
+    $prev_row  = mat_get_date_row( $emp_master_id, $prev_ymd );
+
+    // 日跨ぎ判定：当日に出勤なし／前日が出勤済み・退勤未済／正午以前（§5.3①）
+    $is_overnight_case = ( ! $today_row || is_null( $today_row->clock_in ) )
+        && $prev_row && ! is_null( $prev_row->clock_in ) && is_null( $prev_row->clock_out )
+        && $now_min <= 720;
+
+    // フロントで「前日の退勤として登録」を選択済みの場合は日付指定で確定させる
+    if ( $forced_date === $prev_ymd && $prev_row && is_null( $prev_row->clock_out ) ) {
+        $is_overnight_case = true;
+    }
+
+    if ( $is_overnight_case ) {
+        $row          = $prev_row;
+        $is_overnight = true;
+    } else {
+        if ( ! $today_row || is_null( $today_row->clock_in ) ) {
+            return new WP_Error( 'no_clockin', '出勤打刻がありません。先に出勤を打刻してください。' );
+        }
+        if ( ! is_null( $today_row->clock_out ) ) {
+            return new WP_Error( 'already', '本日はすでに退勤打刻済みです。' );
+        }
+        $row          = $today_row;
+        $is_overnight = false;
+    }
+
+    // 退勤時刻（前日行に保存する場合は前日 0:00 起点の経過分）
+    if ( $override_hhmm !== '' ) {
+        $clock_out_min = mat_parse_time_to_minutes( $override_hhmm );
+        if ( $clock_out_min === null ) {
+            return new WP_Error( 'bad_time', '退勤時刻の形式が正しくありません。' );
+        }
+    } else {
+        $clock_out_min = $is_overnight ? $now_min + 1440 : $now_min;
+    }
+
+    $in_min = mat_parse_time_to_minutes( $row->clock_in );
+    if ( $in_min !== null && $clock_out_min <= $in_min ) {
+        // 手入力で出勤より前になった場合は翌日扱いとする
+        $clock_out_min += 1440;
+        $is_overnight   = true;
+    }
+    if ( $clock_out_min >= 1440 ) $is_overnight = true;
+
+    return array(
+        'row'           => $row,
+        'clock_out_min' => $clock_out_min,
+        'is_overnight'  => $is_overnight,
+        'prev_ymd'      => $prev_ymd,
+        'today_ymd'     => $today,
+        'overnight_candidate' => $is_overnight_case,
+    );
+}
+
+add_action( 'wp_ajax_mat_prepare_clockout',        'mat_prepare_clockout_handler' );
+add_action( 'wp_ajax_nopriv_mat_prepare_clockout', 'mat_prepare_clockout_handler' );
+function mat_prepare_clockout_handler() {
+    check_ajax_referer( 'mat_nonce', 'nonce' );
+
+    $emp_master_id   = intval( $_POST['emp_master_id'] ?? 0 );
+    $employee_code   = sanitize_text_field( $_POST['employee_code'] ?? '' );
+    $break_master_id = intval( $_POST['break_master_id'] ?? 0 );
+    $override        = sanitize_text_field( $_POST['clock_out_override'] ?? '' );
+    $forced_date     = sanitize_text_field( $_POST['target_date'] ?? '' );
+
+    $emp = emp_get_employee_by_code( $employee_code );
+    if ( ! $emp || (int) $emp->id !== $emp_master_id ) {
+        wp_send_json_error( '社員情報が一致しません。ログアウトしてから再度お試しください。' );
+    }
+
+    $target = mat_resolve_clockout_target( $emp_master_id, $override, $forced_date );
+    if ( is_wp_error( $target ) ) wp_send_json_error( $target->get_error_message() );
+
+    $row  = $target['row'];
+    $unit = ! empty( $row->time_unit ) ? (int) $row->time_unit : mat_get_time_unit();
+
+    // 休憩：スライダーの選択を優先、なければ登録済みの値、それもなければ既定行
+    $break_master = $break_master_id ? mat_get_break_master_by_id( $break_master_id ) : null;
+    if ( $break_master && ! $break_master->is_active ) $break_master = null;
+
+    if ( $break_master ) {
+        $break_minutes = (int) $break_master->break_minutes;
+    } elseif ( ! is_null( $row->break_minutes ) ) {
+        $break_minutes = (int) $row->break_minutes;
+        $break_master  = $row->break_master_id ? mat_get_break_master_by_id( $row->break_master_id ) : null;
+    } else {
+        $break_master  = mat_get_default_break_master();
+        $break_minutes = $break_master ? (int) $break_master->break_minutes : 0;
+    }
+
+    $rounded_in_min  = mat_round_in_minutes( mat_parse_time_to_minutes( $row->clock_in ), $unit );
+    $rounded_out_min = mat_round_out_minutes( $target['clock_out_min'], $unit );
+
+    $calc     = mat_calc_work_minutes(
+        mat_minutes_to_time_sql( $rounded_in_min ),
+        mat_minutes_to_time_sql( $rounded_out_min ),
+        $break_minutes
+    );
+    $standard_row     = mat_get_break_alert_mode() === 'auto'
+        ? ( mat_get_auto_break_master( $calc['kousoku'] ) ?: mat_get_default_break_master() )
+        : mat_get_default_break_master();
+    $standard_minutes = mat_get_standard_break_minutes( $calc['kousoku'] );
+
+    $dow = array( '日', '月', '火', '水', '木', '金', '土' );
+    $ts  = strtotime( $row->work_date );
+
+    wp_send_json_success( array(
+        'target_date'          => $row->work_date,
+        'target_date_label'    => (int) date( 'n', $ts ) . '月' . (int) date( 'j', $ts ) . '日(' . $dow[ date( 'w', $ts ) ] . ')',
+        'is_overnight'         => (bool) $target['is_overnight'],
+        // 日跨ぎ確認ポップアップは「前日行に切り替わる」ケースかつ未確定のときのみ
+        'needs_overnight_confirm' => ( $target['overnight_candidate'] && $forced_date !== $row->work_date ),
+        'clock_in'             => mat_format_time_display( $row->clock_in ),
+        'clock_out'            => mat_minutes_to_hm( $target['clock_out_min'] ),
+        'rounded_in'           => mat_minutes_to_hm( $rounded_in_min ),
+        'rounded_out'          => mat_minutes_to_hm( $rounded_out_min ),
+        'break_minutes'        => $break_minutes,
+        'break_master_id'      => $break_master ? (int) $break_master->id : 0,
+        'standard_break'       => $standard_minutes,
+        'standard_master_id'   => $standard_row ? (int) $standard_row->id : 0,
+        'standard_label'       => $standard_row ? $standard_row->label : '',
+        'kousoku_minutes'      => $calc['kousoku'],
+        'labor_minutes'        => $calc['labor'],
+        'labor_text'           => mat_format_minutes_jp( $calc['labor'] ),
+        'overtime_minutes'     => $calc['overtime'],
+        'overtime_text'        => mat_format_minutes_jp( $calc['overtime'] ),
+        'needs_break_confirm'  => ( $standard_minutes !== null && $break_minutes !== (int) $standard_minutes ),
+        'needs_overtime_confirm' => ( ! empty( $calc['overtime'] ) && $calc['overtime'] > 0 ),
+    ) );
+}
+
+// =========================================================
 //  2. 打刻更新（新テーブル版・データ上書き対策適用済み）
 // =========================================================
 
@@ -321,6 +519,7 @@ function mat_attendance_update_handler() {
     $note_input    = sanitize_textarea_field( $_POST['note'] ?? '' ); // フロント側から送られてくる現在の入力値
     $today         = current_time( 'Y-m-d' );
     $now_time      = current_time( 'H:i:s' );
+    $time_unit     = mat_get_time_unit();
 
     $emp = emp_get_employee_by_code( $employee_code );
     if ( ! $emp ) wp_send_json_error( '社員情報が見つかりません。' );
@@ -331,9 +530,6 @@ function mat_attendance_update_handler() {
     // 本日の既存レコード取得
     $row = mat_get_today_row( $emp_master_id );
 
-    // 備考欄に何をセットするか決定（バグ対策：既存の備考が存在する場合は消さずに保持・マージ）
-    $existing_note = $row ? $row->note : null;
-
     if ( $label === '出勤' ) {
         if ( $row && $row->is_holiday ) {
             wp_send_json_error( '本日は休日として登録されています。' );
@@ -342,48 +538,60 @@ function mat_attendance_update_handler() {
             wp_send_json_error( '本日はすでに出勤打刻済みです。' );
         }
 
+        // 丸め込み（繰り上げ）した始業を同時保存（§5.1）
+        $rounded_in = mat_round_clock_in( $now_time, $time_unit );
+
         if ( $row ) {
             // 【重要】備考先入れ後に一回出勤ボタンが押された場合
             $wpdb->update( MAT_DAILY_TABLE,
-                array( 'clock_in' => $now_time),
+                array(
+                    'clock_in'         => $now_time,
+                    'rounded_clock_in' => $rounded_in,
+                    'time_unit'        => $time_unit,
+                ),
                 array( 'id' => (int) $row->id )
             );
         } else {
             $wpdb->insert( MAT_DAILY_TABLE, array(
-                'employee_id'   => $emp_master_id,
-                'employee_code' => $employee_code,
-                'work_date'     => $today,
-                'clock_in'      => $now_time,
-                'note'          => $final_note ?: null,
+                'employee_id'      => $emp_master_id,
+                'employee_code'    => $employee_code,
+                'work_date'        => $today,
+                'clock_in'         => $now_time,
+                'rounded_clock_in' => $rounded_in,
+                'time_unit'        => $time_unit,
+                'note'             => $note_input ?: null,
             ) );
         }
 
     } elseif ( $label === '退勤' ) {
-        if ( ! $row || is_null( $row->clock_in ) ) {
-            wp_send_json_error( '出勤打刻がありません。先に出勤を打刻してください。' );
-        }
-        if ( ! is_null( $row->clock_out ) ) {
-            wp_send_json_error( '本日はすでに退勤打刻済みです。' );
-        }
-
-        $wpdb->update( MAT_DAILY_TABLE,
-            array( 'clock_out' => $now_time ),
-            array( 'id' => (int) $row->id )
-        );
+        mat_handle_clockout( $emp_master_id, $employee_code );
+        // mat_handle_clockout 内で wp_send_json_* が呼ばれる
 
     } elseif ( $label === '休憩' ) {
         if ( ! $row || is_null( $row->clock_in ) ) {
             wp_send_json_error( '出勤打刻がありません。先に出勤を打刻してください。' );
         }
 
-        $break_hhmm    = sanitize_text_field( $_POST['break_hhmm'] ?? '00:00' );
-        $break_minutes = mat_hhmm_to_minutes( $break_hhmm );
-        if ( is_null( $break_minutes ) ) {
-            wp_send_json_error( '休憩時間が不正です。' );
+        $break_master_id = intval( $_POST['break_master_id'] ?? 0 );
+        $break_master    = $break_master_id ? mat_get_break_master_by_id( $break_master_id ) : null;
+
+        if ( $break_master && $break_master->is_active ) {
+            $break_minutes = (int) $break_master->break_minutes;
+        } else {
+            $break_master    = null;
+            $break_master_id = null;
+            $break_hhmm      = sanitize_text_field( $_POST['break_hhmm'] ?? '00:00' );
+            $break_minutes   = mat_parse_time_to_minutes( $break_hhmm );
+            if ( is_null( $break_minutes ) ) {
+                wp_send_json_error( '休憩時間が不正です。' );
+            }
         }
 
         $wpdb->update( MAT_DAILY_TABLE,
-            array( 'break_minutes' => $break_minutes ),
+            array(
+                'break_minutes'   => $break_minutes,
+                'break_master_id' => $break_master ? (int) $break_master->id : null,
+            ),
             array( 'id' => (int) $row->id )
         );
 
@@ -412,6 +620,97 @@ function mat_attendance_update_handler() {
     wp_send_json_success( mat_get_grouped_data( $emp_master_id, current_time( 'Y-m' ) ) );
 }
 
+/**
+ * 退勤打刻の保存（要件定義書 §5.1 / §5.3）。
+ *
+ * 実打刻・丸め込み後の終業・休憩・申請レコードをまとめて確定させる。
+ * 応答は wp_send_json_* で返すため、呼び出し元は以降の処理を行わない。
+ */
+function mat_handle_clockout( $emp_master_id, $employee_code ) {
+    global $wpdb;
+
+    $override    = sanitize_text_field( $_POST['clock_out_override'] ?? '' );
+    $forced_date = sanitize_text_field( $_POST['target_date'] ?? '' );
+
+    $target = mat_resolve_clockout_target( $emp_master_id, $override, $forced_date );
+    if ( is_wp_error( $target ) ) wp_send_json_error( $target->get_error_message() );
+
+    $row  = $target['row'];
+    $unit = ! empty( $row->time_unit ) ? (int) $row->time_unit : mat_get_time_unit();
+
+    // ---- 休憩の確定 ----
+    $break_master_id = intval( $_POST['break_master_id'] ?? 0 );
+    $break_master    = $break_master_id ? mat_get_break_master_by_id( $break_master_id ) : null;
+    if ( $break_master && ! $break_master->is_active ) $break_master = null;
+
+    if ( $break_master ) {
+        $break_minutes = (int) $break_master->break_minutes;
+    } elseif ( ! is_null( $row->break_minutes ) ) {
+        $break_minutes = (int) $row->break_minutes;
+    } else {
+        $default       = mat_get_default_break_master();
+        $break_master  = $default;
+        $break_minutes = $default ? (int) $default->break_minutes : 0;
+    }
+
+    // ---- 打刻の確定 ----
+    $clock_out     = mat_minutes_to_time_sql( $target['clock_out_min'] );
+    $rounded_out   = mat_minutes_to_time_sql( mat_round_out_minutes( $target['clock_out_min'], $unit ) );
+    $rounded_in    = $row->rounded_clock_in
+        ?: mat_minutes_to_time_sql( mat_round_in_minutes( mat_parse_time_to_minutes( $row->clock_in ), $unit ) );
+
+    $data = array(
+        'clock_out'         => $clock_out,
+        'rounded_clock_in'  => $rounded_in,
+        'rounded_clock_out' => $rounded_out,
+        'is_overnight'      => $target['is_overnight'] ? 1 : 0,
+        'break_minutes'     => $break_minutes,
+        'break_master_id'   => $break_master ? (int) $break_master->id : $row->break_master_id,
+        'time_unit'         => $unit,
+    );
+
+    // 退勤時刻を修正した場合は監査用に備考へ追記する（§5.3③）
+    if ( $override !== '' ) {
+        $original = sanitize_text_field( $_POST['clock_out_original'] ?? '' );
+        if ( $original === '' ) $original = current_time( 'H:i' );
+
+        $auto_note = sprintf(
+            '退勤時刻修正 %s → %s（打刻時修正）',
+            $original,
+            mat_minutes_to_hm( $target['clock_out_min'] )
+        );
+        $data['note'] = $row->note ? $row->note . ' / ' . $auto_note : $auto_note;
+    }
+
+    $updated = $wpdb->update( MAT_DAILY_TABLE, $data, array( 'id' => (int) $row->id ) );
+    if ( $updated === false ) {
+        wp_send_json_error( '退勤の登録に失敗しました。管理者にお問い合わせください。' );
+    }
+
+    // ---- 申請レコードの登録 ----
+    $break_reason    = sanitize_textarea_field( $_POST['break_reason'] ?? '' );
+    $overtime_reason = sanitize_textarea_field( $_POST['overtime_reason'] ?? '' );
+
+    if ( $break_reason !== '' ) {
+        mat_upsert_work_request( array(
+            'daily_id'      => (int) $row->id,
+            'request_type'  => 'break_exception',
+            'reason'        => $break_reason,
+            'requested_by'  => 'employee',
+        ) );
+    }
+    if ( $overtime_reason !== '' ) {
+        mat_upsert_work_request( array(
+            'daily_id'      => (int) $row->id,
+            'request_type'  => 'overtime',
+            'reason'        => $overtime_reason,
+            'requested_by'  => 'employee',
+        ) );
+    }
+
+    wp_send_json_success( mat_get_grouped_data( $emp_master_id, substr( $row->work_date, 0, 7 ) ) );
+}
+
 // =========================================================
 //  3. 休日登録（新テーブル版）
 // =========================================================
@@ -435,9 +734,21 @@ function mat_register_holiday_handler() {
     $existing = mat_get_date_row( $emp_master_id, $holiday_date );
     if ( $existing ) {
         $ok = $wpdb->update( MAT_DAILY_TABLE,
-            array( 'clock_in' => null, 'clock_out' => null, 'break_minutes' => null, 'is_holiday' => 1, 'note' => null ),
+            array(
+                'clock_in'          => null,
+                'clock_out'         => null,
+                'rounded_clock_in'  => null,
+                'rounded_clock_out' => null,
+                'is_overnight'      => 0,
+                'break_minutes'     => null,
+                'break_master_id'   => null,
+                'is_holiday'        => 1,
+                'note'              => null,
+            ),
             array( 'id' => (int) $existing->id )
         );
+        // 休日化した日の申請は不要になるため削除する
+        $wpdb->delete( MAT_WORK_REQUEST_TABLE, array( 'daily_id' => (int) $existing->id ), array( '%d' ) );
     } else {
         $ok = $wpdb->insert( MAT_DAILY_TABLE, array(
             'employee_id'   => $emp_master_id,
@@ -537,11 +848,14 @@ function mat_edit_log_handler() {
     $break_minutes = mat_hhmm_to_minutes( $break_hhmm );
 
     $wpdb->update( MAT_DAILY_TABLE, array(
-        'clock_in'      => $clock_in  ?: null,
-        'clock_out'     => $clock_out ?: null,
+        'clock_in'      => $clock_in  ? mat_minutes_to_time_sql( mat_parse_time_to_minutes( $clock_in ) )  : null,
+        'clock_out'     => $clock_out ? mat_minutes_to_time_sql( mat_parse_time_to_minutes( $clock_out ) ) : null,
         'break_minutes' => $break_minutes,
         'note'          => $note ?: null,
     ), array( 'id' => $id ) );
+
+    // 始業・終業・日跨ぎフラグをサーバ側で再計算する
+    mat_recalc_daily_row( $id );
 
     wp_send_json_success();
 }

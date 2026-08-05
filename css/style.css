@@ -712,3 +712,204 @@ input[type="date"].mat-input {
         padding: 5px 3px;
     }
 }
+/* =============================================================
+   v3.2.0 追加：休憩マスタ連動スライダー／退勤ポップアップ
+   ============================================================= */
+
+/* 休憩スライダーのラベル（マスタの label を表示） */
+.mat-break-label {
+    margin: -4px 0 12px;
+    font-size: 0.85em;
+    color: var(--mat-muted);
+    text-align: center;
+    min-height: 1.2em;
+}
+
+/* 日跨ぎ識別マーク */
+.mat-overnight-mark {
+    font-size: 0.9em;
+    margin-left: 2px;
+}
+
+/* ---- 退勤ポップアップ ---- */
+
+/* 退勤ポップアップは行数が多いため既定より広めにする */
+#mat-overnight-modal .mat-modal-inner,
+#mat-break-exception-modal .mat-modal-inner,
+#mat-overtime-modal .mat-modal-inner {
+    width: 400px;
+    padding: 22px 20px;
+}
+
+/* ポップアップ本文（選択された休憩時間／基準の休憩時間など） */
+.mat-modal-text {
+    font-size: 0.88em;
+    line-height: 1.8;
+    color: var(--mat-text);
+    margin: 0 0 4px;
+    padding: 10px 12px;
+    background: var(--mat-bg);
+    border-radius: 6px;
+    /* 「基準の休憩時間：0分（6時間未満）」などが途中で折れないようにする */
+    overflow-wrap: break-word;
+}
+
+/*
+ * ポップアップ本文のラベル／値の行
+ * 全角スペースでの位置合わせは折り返しで崩れるため、2カラムで揃える。
+ */
+.mat-kv {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.mat-kv + .mat-kv {
+    margin-top: 2px;
+}
+
+.mat-kv-k {
+    flex: 0 0 auto;
+    min-width: 8.5em;
+    color: var(--mat-muted);
+    font-weight: normal;
+}
+
+.mat-kv-k::after {
+    content: '：';
+}
+
+.mat-kv-v {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: break-word;
+}
+
+.mat-kv-strong {
+    color: var(--mat-danger);
+}
+
+/*
+ * ラジオ選択行
+ * ラベル内のテキストは .mat-radio-text 1つにまとめること。
+ * 生テキストと <span> を並べるとそれぞれが独立したフレックスアイテムになり、
+ * 「休憩時間を / 0分 / に修正して登録する」が別々に折り返してレイアウトが崩れる。
+ */
+.mat-radio-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.88em;
+    font-weight: bold;
+    color: var(--mat-text);
+    margin: 14px 0 6px;
+    cursor: pointer;
+    line-height: 1.6;
+}
+
+.mat-radio-row input[type="radio"] {
+    width: 16px;
+    height: 16px;
+    margin: 3px 0 0;
+    flex: 0 0 16px;
+    accent-color: var(--mat-primary);
+}
+
+.mat-radio-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    word-break: normal;
+    overflow-wrap: break-word;
+}
+
+/* ラジオ行にぶら下がる入力欄（理由・退勤時刻） */
+.mat-radio-child {
+    display: block;
+    margin-left: 24px;
+    width: calc(100% - 24px);
+    box-sizing: border-box;
+    font-size: 0.92em;
+}
+
+textarea.mat-radio-child {
+    min-height: 56px;
+}
+
+/* ---- スマートフォン向け調整 ---- */
+@media (max-width: 480px) {
+    #mat-overnight-modal .mat-modal-inner,
+    #mat-break-exception-modal .mat-modal-inner,
+    #mat-overtime-modal .mat-modal-inner {
+        width: 100%;
+        padding: 18px 14px;
+    }
+
+    .mat-modal-title {
+        font-size: 0.95em;
+        margin-bottom: 14px;
+    }
+
+    .mat-modal-text {
+        font-size: 0.84em;
+        padding: 9px 10px;
+    }
+
+    /* 狭い画面ではラベルと値を縦積みにする */
+    .mat-kv {
+        display: block;
+    }
+
+    .mat-kv + .mat-kv {
+        margin-top: 6px;
+    }
+
+    .mat-kv-k {
+        display: block;
+        font-size: 0.9em;
+    }
+
+    .mat-kv-k::after {
+        content: '';
+    }
+
+    .mat-radio-row {
+        font-size: 0.85em;
+        margin: 12px 0 5px;
+    }
+
+    .mat-radio-child {
+        margin-left: 20px;
+        width: calc(100% - 20px);
+    }
+
+    /* ボタン文言が長いため、収まらない場合は折り返す */
+    .mat-modal-actions {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .mat-modal-actions .mat-btn {
+        flex: 1 1 40%;
+        min-width: 104px;
+        font-size: 0.88em;
+        padding: 10px 8px;
+        line-height: 1.4;
+    }
+}
+
+/* 小型スマホ：ポップアップのボタンは縦積みにして文言の折り返しを避ける */
+@media (max-width: 360px) {
+    .mat-modal-actions {
+        flex-direction: column;
+    }
+
+    .mat-modal-actions .mat-btn {
+        width: 100%;
+        flex: none;
+    }
+
+    .mat-radio-child {
+        margin-left: 0;
+        width: 100%;
+    }
+}

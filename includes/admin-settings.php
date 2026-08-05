@@ -2,7 +2,13 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 /**
- * admin-settings.php  v3.1.4
+ * admin-settings.php  v3.2.0
+ *
+ * 変更点（v3.2.0）:
+ * - 打刻履歴に「始業 / 終業 / 残業時間 / アラート / 修正 / 修正ステータス」列を追加（要件定義書 §6.1）。
+ * - アラートは保存せず、表示時に動的計算する（マスタ変更時の整合性を保つため）。
+ * - 「修正」ボタンで admin-alert-modal.php の共通モーダルを開く。
+ * - 管理者が打刻を修正した場合、始業・終業・残業をサーバ側で自動再計算する（§6.4）。
  *
  * 変更点（v3.1.4）:
  * - 【仕様改善】管理画面アクセス時のデフォルト状態を、特定の社員ではなく「--- 従業員を選択してください ---」が初期選択される未選択状態に修正。
@@ -35,13 +41,13 @@ function mat_register_admin_menu() {
 add_action( 'admin_enqueue_scripts', 'mat_admin_enqueue' );
 function mat_admin_enqueue( $hook ) {
     $page = $_GET['page'] ?? '';
-    $mat_pages = array(
+    $mat_pages = apply_filters( 'mat_admin_pages', array(
         'my-attendance-settings',
         'mat-auth-management',
         'mat-settings',
         'mat-test-data',
         'mat-migrate',
-    );
+    ) );
     if ( ! in_array( $page, $mat_pages, true ) ) return;
 
     $emp_css = WP_PLUGIN_DIR . '/employee-manager/admin/assets/admin.css';
@@ -60,8 +66,9 @@ function mat_admin_edit_log_handler() {
 
     global $wpdb;
     $id         = intval( $_POST['id'] ?? 0 );
-    $clock_in   = sanitize_text_field( $_POST['clock_in']   ?? '' );
-    $clock_out  = sanitize_text_field( $_POST['clock_out']  ?? '' );
+    // 24時間超（"25:10"）も受け付けるため mat_parse_time_to_minutes で正規化する
+    $clock_in   = mat_minutes_to_time_sql( mat_parse_time_to_minutes( sanitize_text_field( $_POST['clock_in']  ?? '' ) ) );
+    $clock_out  = mat_minutes_to_time_sql( mat_parse_time_to_minutes( sanitize_text_field( $_POST['clock_out'] ?? '' ) ) );
     $break_hhmm = sanitize_text_field( $_POST['break_time'] ?? '00:00' );
     $note       = sanitize_textarea_field( $_POST['note']   ?? '' );
     $is_holiday = ( ( $_POST['is_holiday'] ?? '0' ) === '1' );
@@ -96,10 +103,25 @@ function mat_admin_edit_log_handler() {
         );
     }
 
+    // 休日化した場合は丸め値もクリアする
+    if ( $is_holiday ) {
+        $data_fields['rounded_clock_in']  = null;
+        $data_fields['rounded_clock_out'] = null;
+        $data_fields['is_overnight']      = 0;
+        $data_fields['break_master_id']   = null;
+    }
+
     if ( $row ) {
         // ① レコードが存在する場合は「UPDATE」
         $updated = $wpdb->update( MAT_DAILY_TABLE, $data_fields, array( 'id' => $id ) );
         if ( $updated === false ) wp_send_json_error( '更新に失敗しました。' );
+
+        // 出勤・退勤・休憩を修正したので始業／終業を再計算（§6.4）
+        if ( ! $is_holiday ) {
+            mat_recalc_daily_row( $id );
+        } else {
+            $wpdb->delete( MAT_WORK_REQUEST_TABLE, array( 'daily_id' => $id ), array( '%d' ) );
+        }
     } else {
         // ② 空行からの登録時は「INSERT」を実行
         if ( empty( $employee_code ) || empty( $work_date ) ) {
@@ -115,6 +137,8 @@ function mat_admin_edit_log_handler() {
 
         $inserted = $wpdb->insert( MAT_DAILY_TABLE, $data_fields );
         if ( ! $inserted ) wp_send_json_error( '新規データの登録に失敗しました。' );
+
+        if ( ! $is_holiday ) mat_recalc_daily_row( (int) $wpdb->insert_id );
     }
 
     wp_send_json_success();
@@ -183,11 +207,14 @@ function mat_history_page_render() {
     $logs            = array();
     $work_days_count = 0;
     $total_days      = 0;
+    $alert_map       = array();
     if ( $selected_emp ) {
         $data            = mat_get_grouped_data( $selected_emp->id, $view_month );
         $logs            = $data['logs'];
         $work_days_count = $data['work_days_count'];
         $total_days      = $data['total_days'];
+        // アラートは保存せず表示時に動的計算する（§6.2）
+        $alert_map       = mat_get_month_alerts( $selected_emp->id, $view_month );
     }
     ?>
     <div class="wrap">
@@ -258,33 +285,59 @@ function mat_history_page_render() {
                 </div>
             </div>
 
-            <table class="widefat fixed striped" style="margin-top:8px;">
+            <table class="widefat striped" style="margin-top:8px;">
                 <thead>
                     <tr>
-                        <th style="width:110px;">日付</th>
-                        <th style="width:80px;">出勤</th>
-                        <th style="width:80px;">退勤</th>
-                        <th style="width:80px;">休憩</th>
-                        <th>備考</th>
-                        <th style="width:100px;">操作</th>
+                        <th style="width:100px;">日付</th>
+                        <th style="width:75px;">出勤<br><span style="font-weight:400;font-size:.85em;">(打刻)</span></th>
+                        <th style="width:75px;">退勤<br><span style="font-weight:400;font-size:.85em;">(打刻)</span></th>
+                        <th style="width:70px;">休憩</th>
+                        <th style="width:140px;">備考</th>
+                        <th style="width:70px;">始業</th>
+                        <th style="width:70px;">終業</th>
+                        <th style="width:80px;">残業時間</th>
+                        <th>アラート</th>
+                        <th style="width:70px;">修正</th>
+                        <th style="width:110px;">修正ステータス</th>
+                        <th style="width:80px;">操作</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if ( empty( $logs ) ) : ?>
-                        <tr><td colspan="6" style="text-align:center;padding:20px;">データがありません。</td></tr>
+                        <tr><td colspan="12" style="text-align:center;padding:20px;">データがありません。</td></tr>
                     <?php else : ?>
                         <?php foreach ( $logs as $day ) :
                             $is_empty   = ! $day['has_data'];
                             $is_holiday = $day['is_holiday'];
                             $row_style  = $is_empty ? 'color:#bbb; background:#fafafa;' : '';
                             if ( $is_holiday ) $row_style = 'background:#fff8e1;';
+
+                            $meta      = $alert_map[ $day['date_ymd'] ] ?? array( 'alerts' => array(), 'requests' => array() );
+                            $alerts    = $meta['alerts'];
+                            $has_alert = ! empty( $alerts );
                         ?>
                             <tr data-id="<?php echo esc_attr( $day['id'] ); ?>" style="<?php echo $row_style; ?>">
                                 <td><?php echo esc_html( $day['date'] ); ?></td>
                                 <td><?php echo esc_html( $day['in'] ?? '-' ); ?></td>
-                                <td><?php echo esc_html( $day['out'] ?? '-' ); ?></td>
+                                <td>
+                                    <?php echo esc_html( $day['out'] ?? '-' ); ?>
+                                    <?php if ( ! empty( $day['is_overnight'] ) ) echo ' <span title="日跨ぎ">⏰</span>'; ?>
+                                </td>
                                 <td><?php echo esc_html( $day['break'] ?? '-' ); ?></td>
-                                <td><?php echo esc_html( is_array( $day['notes'] ) ? implode( ' / ', $day['notes'] ) : '' ); ?></td>
+                                <td style="font-size:.9em;"><?php echo esc_html( is_array( $day['notes'] ) ? implode( ' / ', $day['notes'] ) : '' ); ?></td>
+                                <td><?php echo esc_html( $day['rounded_in'] ?: '−' ); ?></td>
+                                <td><?php echo esc_html( $day['rounded_out'] ?: '−' ); ?></td>
+                                <td><?php echo esc_html( $day['overtime'] ?: '' ); ?></td>
+                                <td><?php echo mat_render_alert_badges( $alerts ); // phpcs:ignore WordPress.Security.EscapeOutput ?></td>
+                                <td>
+                                    <?php if ( $has_alert ) : ?>
+                                        <button class="button button-small mat-alert-fix-btn"
+                                            data-daily-id="<?php echo esc_attr( $day['id'] ); ?>">修正</button>
+                                    <?php else : ?>
+                                        <button class="button button-small" disabled>修正</button>
+                                    <?php endif; ?>
+                                </td>
+                                <td><?php echo mat_render_status_badges( $meta['requests'] ); // phpcs:ignore WordPress.Security.EscapeOutput ?></td>
                                 <td>
                                     <button class="button button-small edit-log"
                                         data-id="<?php echo esc_attr( $day['id'] ); ?>"
@@ -322,8 +375,14 @@ function mat_history_page_render() {
             </div>
 
             <table class="form-table" style="margin:0;">
-                <tr><th>出勤</th><td><input type="time" id="edit-in" class="regular-text"></td></tr>
-                <tr><th>退勤</th><td><input type="time" id="edit-out" class="regular-text"></td></tr>
+                <tr><th>出勤</th><td><input type="text" id="edit-in" class="regular-text" placeholder="HH:MM"></td></tr>
+                <tr>
+                    <th>退勤</th>
+                    <td>
+                        <input type="text" id="edit-out" class="regular-text" placeholder="HH:MM">
+                        <p class="description" style="margin:4px 0 0;">日跨ぎは 25:10 のように24時間超で入力できます。</p>
+                    </td>
+                </tr>
                 <tr><th>休憩</th><td><input type="time" id="edit-break" class="regular-text" value="00:00"></td></tr>
                 <tr><th>備考</th><td><textarea id="edit-notes" class="regular-text" rows="2"></textarea></td></tr>
                 <tr>
@@ -339,6 +398,8 @@ function mat_history_page_render() {
             </div>
         </div>
     </div>
+
+    <?php mat_render_alert_modal(); ?>
 
     <script>
     jQuery(function($) {

@@ -32,6 +32,19 @@ function mat_save_settings_handler() {
     update_option( 'mat_allow_log_edit',             isset( $_POST['mat_allow_log_edit'] )             ? 1 : 0 );
     update_option( 'mat_closing_day',               intval( $_POST['mat_closing_day'] ?? 0 ) );
 
+    // 勤務時間入力単位（15 / 30 / 60分のみ許可）
+    $time_unit = intval( $_POST['mat_time_unit'] ?? 30 );
+    if ( ! in_array( $time_unit, array( 15, 30, 60 ), true ) ) $time_unit = 30;
+    update_option( 'mat_time_unit', $time_unit );
+
+    // 例外休憩アラートの基準
+    $alert_mode = ( $_POST['mat_break_alert_mode'] ?? 'auto' ) === 'fixed' ? 'fixed' : 'auto';
+    update_option( 'mat_break_alert_mode', $alert_mode );
+
+    // 残業判定の基準労働時間（分）
+    $threshold = intval( $_POST['mat_overtime_threshold'] ?? 480 );
+    update_option( 'mat_overtime_threshold', $threshold > 0 ? $threshold : 480 );
+
     wp_redirect( admin_url( 'admin.php?page=mat-settings&saved=1' ) );
     exit;
 }
@@ -47,6 +60,9 @@ function mat_settings_page_render() {
     $show_paid_leave_req  = (bool) get_option( 'mat_show_paid_leave_request', 1 );
     $allow_log_edit       = (bool) get_option( 'mat_allow_log_edit', 0 );
     $closing_day     = (int)  get_option( 'mat_closing_day', 0 );
+    $time_unit            = mat_get_time_unit();
+    $break_alert_mode     = mat_get_break_alert_mode();
+    $overtime_threshold   = mat_get_overtime_threshold();
 
     $closing_options = array(
         0  => '末日',
@@ -165,10 +181,65 @@ function mat_settings_page_render() {
                     </td>
                 </tr>
 
+                <!-- 勤務時間入力単位 -->
+                <tr>
+                    <th scope="row">勤務時間入力単位</th>
+                    <td>
+                        <select name="mat_time_unit">
+                            <?php foreach ( array( 15, 30, 60 ) as $unit ) : ?>
+                                <option value="<?php echo esc_attr( $unit ); ?>" <?php selected( $time_unit, $unit ); ?>>
+                                    <?php echo esc_html( $unit ); ?>分
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <p class="description">
+                            出勤・退勤の打刻時刻を丸め込む単位です。<br>
+                            <strong>出勤は繰り上げ（遅い方）、退勤は切り捨て（早い方）</strong>に丸め込まれます。<br>
+                            例）30分単位のとき　出勤 8:25 → 始業 8:30 ／ 出勤 8:31 → 始業 9:00 ／ 退勤 17:55 → 終業 17:30<br>
+                            実打刻（clock_in / clock_out）は改変されず、丸め込み後の値は「始業 / 終業」として別に保持されます。
+                        </p>
+                    </td>
+                </tr>
+
+                <!-- 残業判定の基準労働時間 -->
+                <tr>
+                    <th scope="row">残業判定の基準労働時間</th>
+                    <td>
+                        <input type="number" name="mat_overtime_threshold" min="1" max="1440" step="1"
+                            value="<?php echo esc_attr( $overtime_threshold ); ?>" class="small-text"> 分
+                        <p class="description">
+                            労働時間（拘束時間 − 休憩時間）がこの分数を超えた分を残業時間として計上します。既定 480分（8時間）。
+                        </p>
+                    </td>
+                </tr>
+
+                <!-- 例外休憩アラートの基準 -->
+                <tr>
+                    <th scope="row">例外休憩アラートの基準</th>
+                    <td>
+                        <label style="display:block; margin-bottom:6px;">
+                            <input type="radio" name="mat_break_alert_mode" value="auto"
+                                <?php checked( $break_alert_mode, 'auto' ); ?>>
+                            拘束時間から自動判定した区分の休憩時間と比較する（推奨）
+                        </label>
+                        <label style="display:block;">
+                            <input type="radio" name="mat_break_alert_mode" value="fixed"
+                                <?php checked( $break_alert_mode, 'fixed' ); ?>>
+                            常に「既定」に設定した休憩時間と比較する
+                        </label>
+                        <p class="description">
+                            労働基準法第34条では労働時間6時間超で45分以上、8時間超で60分以上の休憩が必要です。<br>
+                            「自動判定」を選ぶと、拘束6〜8時間の日は基準45分として扱われるため、不要なアラートが出ません。
+                        </p>
+                    </td>
+                </tr>
+
             </table>
 
             <?php submit_button( '設定を保存' ); ?>
         </form>
+
+        <?php mat_render_break_master_section(); ?>
     </div>
     <?php
 }

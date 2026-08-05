@@ -71,11 +71,41 @@ jQuery(document).ready(function ($) {
         var now = new Date();
         return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
     }
+    // .mat-modal は display:flex で中央寄せするため fadeIn（display:block）は使わない
+    function showModal(selector, data) {
+        $(selector).data('prepared', data || null).css('display', 'flex');
+    }
+    // ポップアップ本文のラベル／値 1行分（値は呼び出し側でエスケープ済みのHTML）
+    function kvRow(key, valueHtml) {
+        return '<div class="mat-kv"><span class="mat-kv-k">' + esc(key) + '</span>'
+            + '<strong class="mat-kv-v">' + valueHtml + '</strong></div>';
+    }
 
-    // 休憩スライダー
-    $('#mat-break-slider').on('input', function () {
-        $('#mat-break-display').text(minsToHHMM($(this).val()));
-    });
+    // ===================== 休憩スライダー（休憩マスタ連動の離散ステップ） =====================
+    var breakSteps = matAjax.breakSteps || [];
+
+    function currentBreakStep() {
+        if (!breakSteps.length) return null;
+        var ix = parseInt($('#mat-break-slider').val(), 10);
+        if (isNaN(ix) || ix < 0) ix = 0;
+        if (ix > breakSteps.length - 1) ix = breakSteps.length - 1;
+        return breakSteps[ix];
+    }
+
+    function renderBreakStep() {
+        var step = currentBreakStep();
+        if (!step) {
+            $('#mat-break-display').text('--');
+            $('#mat-break-label').text('休憩マスタが登録されていません。');
+            $('.mat-wrap [data-label="休憩"]').prop('disabled', true).css('opacity', '0.5');
+            return;
+        }
+        $('#mat-break-display').text(step.minutes + '分');
+        $('#mat-break-label').text(step.label);
+    }
+
+    $('#mat-break-slider').on('input change', renderBreakStep);
+    renderBreakStep();
 
     // 社員コード認証
     $('#mat-btn-verify-code').on('click', function () {
@@ -258,7 +288,11 @@ jQuery(document).ready(function ($) {
             if (!confirm('すでに休憩が登録されています。上書きしますか？')) return;
         }
 
-        // ★【バグ修正】現在入力ボックスにある備考データを送信パラメータとして引き連れる
+        // 退勤は①日跨ぎ →②例外休憩 →③残業 の順にポップアップで確認する
+        if (label === '退勤') {
+            startClockoutFlow($(this));
+            return;
+        }
 
         var postData = {
             action: 'mat_attendance_update',
@@ -268,7 +302,12 @@ jQuery(document).ready(function ($) {
             nonce: nonce,
         };
 
-        if (label === '休憩') { postData.break_hhmm = minsToHHMM($('#mat-break-slider').val()); }
+        if (label === '休憩') {
+            var step = currentBreakStep();
+            if (!step) { alert('休憩マスタが登録されていません。管理者にお問い合わせください。'); return; }
+            postData.break_master_id = step.id;
+            postData.break_hhmm = minsToHHMM(step.minutes);
+        }
 
         var $btn = $(this);
         btnLoading($btn, true);
@@ -291,6 +330,206 @@ jQuery(document).ready(function ($) {
             isSubmitting = false;
             alert('通信エラーが発生しました。');
         });
+    });
+
+    // =====================================================
+    //  退勤フロー（① 日跨ぎ → ② 例外休憩 → ③ 残業）
+    // =====================================================
+
+    // フロー中の状態。修正が入るたびに prepare をやり直して再判定する。
+    var clockout = {
+        $btn: null,
+        targetDate: '',
+        override: '',
+        breakMasterId: 0,
+        breakReason: '',
+        overtimeReason: '',
+        overnightConfirmed: false,
+    };
+
+    function startClockoutFlow($btn) {
+        var step = currentBreakStep();
+        clockout = {
+            $btn: $btn,
+            targetDate: '',
+            override: '',
+            breakMasterId: step ? step.id : 0,
+            breakReason: '',
+            breakFixed: false,
+            overtimeReason: '',
+            overnightConfirmed: false,
+        };
+        btnLoading($btn, true);
+        isSubmitting = true;
+        prepareClockout();
+    }
+
+    function endClockoutFlow() {
+        if (clockout.$btn) btnLoading(clockout.$btn, false);
+        isSubmitting = false;
+    }
+
+    function prepareClockout() {
+        $.post(ajaxurl, {
+            action: 'mat_prepare_clockout',
+            emp_master_id: session.empMasterId,
+            employee_code: session.employeeCode,
+            break_master_id: clockout.breakMasterId,
+            clock_out_override: clockout.override,
+            target_date: clockout.targetDate,
+            nonce: nonce,
+        }, function (res) {
+            if (!res.success) {
+                endClockoutFlow();
+                showToast(res.data, 'error');
+                alert('エラー: ' + res.data);
+                return;
+            }
+            handlePrepareResult(res.data);
+        }).fail(function () {
+            endClockoutFlow();
+            alert('通信エラーが発生しました。');
+        });
+    }
+
+    function handlePrepareResult(d) {
+        clockout.targetDate = d.target_date;
+        // 監査用：最初に判定した退勤時刻を「修正前」として保持する
+        if (clockout.originalOut === undefined) clockout.originalOut = d.clock_out;
+
+        // ① 日跨ぎ確認
+        if (d.needs_overnight_confirm && !clockout.overnightConfirmed) {
+            $('#mat-overnight-text').html(
+                esc(d.target_date_label) + ' ' + esc(d.clock_in) + ' に出勤しています。<br>'
+                + 'この退勤を「' + esc(d.target_date_label) + '」の退勤として登録します。よろしいですか？'
+            );
+            showModal('#mat-overnight-modal', d);
+            return;
+        }
+
+        // ② 例外休憩
+        if (d.needs_break_confirm && clockout.breakReason === '' && !clockout.breakFixed) {
+            $('#mat-be-selected').text(d.break_minutes + '分');
+            $('#mat-be-standard').text(d.standard_break + '分'
+                + (d.standard_label ? '（' + d.standard_label + '）' : ''));
+            $('#mat-be-fix-label').text(d.standard_break + '分');
+            $('#mat-be-reason').val('');
+            $('input[name="mat-be-choice"][value="request"]').prop('checked', true);
+            clearError('mat-be-error');
+            showModal('#mat-break-exception-modal', d);
+            return;
+        }
+
+        // ③ 残業確認
+        if (d.needs_overtime_confirm && clockout.overtimeReason === '') {
+            $('#mat-ot-summary').html(
+                kvRow('始業 / 終業', esc(d.rounded_in) + ' 〜 ' + esc(d.rounded_out))
+                + kvRow('休憩', esc(d.break_minutes) + '分')
+                + kvRow('労働時間', esc(d.labor_text))
+                + kvRow('残業時間', '<span class="mat-kv-strong">' + esc(d.overtime_text) + '</span>')
+            );
+            $('#mat-ot-time').val(d.clock_out.length === 5 && parseInt(d.clock_out, 10) < 24 ? d.clock_out : '');
+            $('#mat-ot-reason').val('');
+            $('input[name="mat-ot-choice"][value="request"]').prop('checked', true);
+            clearError('mat-ot-error');
+            showModal('#mat-overtime-modal', d);
+            return;
+        }
+
+        submitClockout();
+    }
+
+    function submitClockout() {
+        $.post(ajaxurl, {
+            action: 'mat_attendance_update',
+            emp_master_id: session.empMasterId,
+            employee_code: session.employeeCode,
+            label: '退勤',
+            target_date: clockout.targetDate,
+            clock_out_override: clockout.override,
+            clock_out_original: clockout.originalOut || '',
+            break_master_id: clockout.breakMasterId,
+            break_reason: clockout.breakReason,
+            overtime_reason: clockout.overtimeReason,
+            nonce: nonce,
+        }, function (res) {
+            endClockoutFlow();
+            if (res.success) {
+                showToast('退勤を登録しました ✓', 'success');
+                // 日跨ぎ退勤では前月の行を更新することがあるため、表示中の月で読み直す
+                loadLogs();
+                refreshPunchButtons();
+            } else {
+                showToast(res.data, 'error');
+                alert('エラー: ' + res.data);
+            }
+        }).fail(function () {
+            endClockoutFlow();
+            alert('通信エラーが発生しました。');
+        });
+    }
+
+    // ---- ① 日跨ぎ ----
+    $('#mat-overnight-ok').on('click', function () {
+        var d = $('#mat-overnight-modal').data('prepared') || {};
+        clockout.overnightConfirmed = true;
+        clockout.targetDate = d.target_date || clockout.targetDate;
+        $('#mat-overnight-modal').fadeOut(150);
+        prepareClockout();
+    });
+    $('#mat-overnight-cancel').on('click', function () {
+        $('#mat-overnight-modal').fadeOut(150);
+        endClockoutFlow();
+    });
+
+    // ---- ② 例外休憩 ----
+    $('#mat-be-ok').on('click', function () {
+        var d = $('#mat-break-exception-modal').data('prepared') || {};
+        var choice = $('input[name="mat-be-choice"]:checked').val();
+
+        if (choice === 'request') {
+            var reason = $.trim($('#mat-be-reason').val());
+            if (!reason) { setError('mat-be-error', '申請理由を入力してください。'); return; }
+            clockout.breakReason = reason;
+        } else {
+            // 基準の休憩時間に修正して登録（申請レコードは作らない）
+            clockout.breakMasterId = d.standard_master_id || clockout.breakMasterId;
+            clockout.breakFixed = true;
+            clockout.breakReason = '';
+        }
+
+        $('#mat-break-exception-modal').fadeOut(150);
+        // 休憩を変えると残業判定も変わるため再判定する
+        prepareClockout();
+    });
+    $('#mat-be-cancel').on('click', function () {
+        $('#mat-break-exception-modal').fadeOut(150);
+        endClockoutFlow();
+    });
+
+    // ---- ③ 残業 ----
+    $('#mat-ot-ok').on('click', function () {
+        var choice = $('input[name="mat-ot-choice"]:checked').val();
+
+        if (choice === 'request') {
+            var reason = $.trim($('#mat-ot-reason').val());
+            if (!reason) { setError('mat-ot-error', '申請理由を入力してください。'); return; }
+            clockout.overtimeReason = reason;
+            $('#mat-overtime-modal').fadeOut(150);
+            submitClockout();
+            return;
+        }
+
+        var newTime = $('#mat-ot-time').val();
+        if (!newTime) { setError('mat-ot-error', '修正後の退勤時刻を入力してください。'); return; }
+        clockout.override = newTime;
+        $('#mat-overtime-modal').fadeOut(150);
+        // 修正後に再度①〜③の判定を行う
+        prepareClockout();
+    });
+    $('#mat-ot-cancel').on('click', function () {
+        $('#mat-overtime-modal').fadeOut(150);
+        endClockoutFlow();
     });
 
     // 備考のみ保存
@@ -341,6 +580,8 @@ jQuery(document).ready(function ($) {
         var hasClockin = !!status.has_clockin;
         var hasClockout = !!status.has_clockout;
         var isHoliday = !!status.is_holiday;
+        // 前日の退勤が未完了で正午以前なら、当日に出勤打刻が無くても退勤を押せる
+        var pendingOvernight = !!status.pending_overnight;
         session.hasBreak = !!status.has_break_time;
         session.hasNote = !!status.has_notes;
 
@@ -353,7 +594,7 @@ jQuery(document).ready(function ($) {
             $btnIn.prop('disabled', false).text('出勤').css('opacity', '1');
         }
 
-        if (isHoliday || !hasClockin || hasClockout) {
+        if (isHoliday || (!hasClockin && !pendingOvernight) || hasClockout) {
             $btnOut.prop('disabled', true).text(hasClockout ? '退勤済み' : '退勤').css('opacity', '0.5');
         } else {
             $btnOut.prop('disabled', false).text('退勤').css('opacity', '1');
@@ -508,7 +749,9 @@ jQuery(document).ready(function ($) {
                 if (allowLogEdit) html += '<td style="color:#ccc;font-size:.8em;">-</td>';
             } else {
                 html += '<td>' + esc(row.in || '-') + '</td>';
-                html += '<td>' + esc(row.out || '-') + '</td>';
+                // 24時以降の退勤は 25:10 のように24時間超表記＋識別マークを付ける
+                var outText = row.out ? esc(row.out) + (row.is_overnight ? ' <span class="mat-overnight-mark" title="日跨ぎ">⏰</span>' : '') : '-';
+                html += '<td>' + outText + '</td>';
                 html += '<td>' + esc(row.break || '-') + '</td>';
                 var notes = Array.isArray(row.notes) ? row.notes.join(' / ') : '';
                 html += '<td style="text-align:left;">' + esc(notes) + '</td>';
