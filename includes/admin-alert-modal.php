@@ -98,6 +98,11 @@ function mat_admin_save_alert_fix_handler() {
 	) );
 	if ( ! $row ) wp_send_json_error( 'データが見つかりません。' );
 
+	// 修正によってアラートが解消しても、保存前に存在したアラートへの
+	// 対応ステータスを履歴として残せるよう、更新前の状態を保持する。
+	$original_requests = mat_get_work_requests_by_daily( $daily_id );
+	$original_alerts   = mat_build_row_alerts( $row, $original_requests );
+
 	$clock_in  = sanitize_text_field( $_POST['clock_in']  ?? '' );
 	$clock_out = sanitize_text_field( $_POST['clock_out'] ?? '' );
 	$break_in  = sanitize_text_field( $_POST['break_minutes'] ?? '' );
@@ -133,9 +138,10 @@ function mat_admin_save_alert_fix_handler() {
 	$requests = mat_get_work_requests_by_daily( $daily_id );
 	$alerts   = mat_build_row_alerts( $row, $requests );
 
-	// 現在のアラートに対応する申請種別を決定する
+	// 保存前または現在のアラートに対応する申請種別を決定する。
+	// 時刻・休憩の修正でアラートが解消した場合も、選択されたステータスを保存する。
 	$types = array();
-	foreach ( $alerts as $a ) {
+	foreach ( array_merge( $original_alerts, $alerts ) as $a ) {
 		if ( $a['code'] === 'BREAK_IRREGULAR' ) $types[] = 'break_exception';
 		if ( $a['code'] === 'OVERTIME_REQUESTED' || $a['code'] === 'OVERTIME_NO_REQUEST' ) $types[] = 'overtime';
 	}
