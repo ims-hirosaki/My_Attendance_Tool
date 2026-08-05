@@ -158,6 +158,8 @@ function mat_admin_delete_log_handler() {
 
     $deleted = $wpdb->delete( MAT_DAILY_TABLE, array( 'id' => $id ), array( '%d' ) );
     if ( $deleted !== false ) {
+        // 日次データに紐づく申請・対応履歴も残さない。
+        $wpdb->delete( MAT_WORK_REQUEST_TABLE, array( 'daily_id' => $id ), array( '%d' ) );
         wp_send_json_success( '削除しました。' );
     } else {
         wp_send_json_error( '削除に失敗しました。' );

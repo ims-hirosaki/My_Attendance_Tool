@@ -323,6 +323,7 @@ function mat_render_alert_modal() {
 			<p id="mat-alert-error" style="color:#d63638; display:none; margin:10px 0 0;"></p>
 
 			<div style="margin-top:20px; display:flex; gap:8px; justify-content:flex-end;">
+				<button type="button" class="button button-link-delete" id="mat-alert-delete" style="margin-right:auto;">🗑 削除する</button>
 				<button type="button" class="button" id="mat-alert-cancel">キャンセル</button>
 				<button type="button" class="button button-primary" id="mat-alert-save">💾 保存</button>
 			</div>
@@ -332,6 +333,7 @@ function mat_render_alert_modal() {
 	<script>
 	jQuery(function($) {
 		var alertNonce = '<?php echo esc_js( wp_create_nonce( 'mat_alert_nonce' ) ); ?>';
+		var deleteNonce = '<?php echo esc_js( wp_create_nonce( 'mat_admin_nonce' ) ); ?>';
 		var currentDailyId = 0;
 
 		// 保存後の挙動はページ側で差し替え可能
@@ -377,6 +379,7 @@ function mat_render_alert_modal() {
 				$('#mat-alert-reason-box').hide();
 			}
 			$('#mat-alert-error').hide();
+			$('#mat-alert-delete').prop('disabled', false).text('🗑 削除する');
 		}
 
 		$(document).on('click', '.mat-alert-fix-btn', function() {
@@ -402,6 +405,29 @@ function mat_render_alert_modal() {
 		$('#mat-alert-modal').on('click', function(e) { if (e.target === this) closeModal(); });
 		$(document).on('keydown', function(e) {
 			if (e.key === 'Escape' && $('#mat-alert-modal').is(':visible')) closeModal();
+		});
+
+		$('#mat-alert-delete').on('click', function() {
+			if (!currentDailyId || !confirm('この打刻データを完全に削除しますか？\n関連する申請・対応履歴も削除されます。')) return;
+
+			var deletingId = currentDailyId;
+			var $btn = $(this).prop('disabled', true).text('削除中...');
+			$.post(ajaxurl, {
+				action: 'mat_admin_delete_log',
+				id: deletingId,
+				nonce: deleteNonce
+			}, function(res) {
+				if (!res.success) {
+					$btn.prop('disabled', false).text('🗑 削除する');
+					$('#mat-alert-error').text(res.data).show();
+					return;
+				}
+				closeModal();
+				window.matAlertModalOnSaved({ deleted: true, daily_id: deletingId });
+			}).fail(function() {
+				$btn.prop('disabled', false).text('🗑 削除する');
+				$('#mat-alert-error').text('通信エラーが発生しました。').show();
+			});
 		});
 
 		$('#mat-alert-save').on('click', function() {
