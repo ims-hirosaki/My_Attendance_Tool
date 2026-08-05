@@ -75,6 +75,11 @@ jQuery(document).ready(function ($) {
     function showModal(selector, data) {
         $(selector).data('prepared', data || null).css('display', 'flex');
     }
+    // ポップアップ本文のラベル／値 1行分（値は呼び出し側でエスケープ済みのHTML）
+    function kvRow(key, valueHtml) {
+        return '<div class="mat-kv"><span class="mat-kv-k">' + esc(key) + '</span>'
+            + '<strong class="mat-kv-v">' + valueHtml + '</strong></div>';
+    }
 
     // ===================== 休憩スライダー（休憩マスタ連動の離散ステップ） =====================
     var breakSteps = matAjax.breakSteps || [];
@@ -418,9 +423,10 @@ jQuery(document).ready(function ($) {
         // ③ 残業確認
         if (d.needs_overtime_confirm && clockout.overtimeReason === '') {
             $('#mat-ot-summary').html(
-                '始業 ' + esc(d.rounded_in) + ' ／ 終業 ' + esc(d.rounded_out)
-                + ' ／ 休憩 ' + esc(d.break_minutes) + '分<br>'
-                + '労働時間 ' + esc(d.labor_text) + ' → 残業 ' + esc(d.overtime_text)
+                kvRow('始業 / 終業', esc(d.rounded_in) + ' 〜 ' + esc(d.rounded_out))
+                + kvRow('休憩', esc(d.break_minutes) + '分')
+                + kvRow('労働時間', esc(d.labor_text))
+                + kvRow('残業時間', '<span class="mat-kv-strong">' + esc(d.overtime_text) + '</span>')
             );
             $('#mat-ot-time').val(d.clock_out.length === 5 && parseInt(d.clock_out, 10) < 24 ? d.clock_out : '');
             $('#mat-ot-reason').val('');

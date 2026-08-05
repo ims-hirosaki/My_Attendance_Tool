@@ -294,21 +294,27 @@ function mat_shortcode_render() {
         <div class="mat-modal" id="mat-break-exception-modal" style="display:none;">
             <div class="mat-modal-inner">
                 <h3 class="mat-modal-title">休憩時間がイレギュラーです</h3>
-                <p class="mat-modal-text">
-                    選択された休憩時間：<strong id="mat-be-selected">--</strong><br>
-                    基準の休憩時間　　：<strong id="mat-be-standard">--</strong>
-                </p>
+                <div class="mat-modal-text">
+                    <div class="mat-kv">
+                        <span class="mat-kv-k">選択された休憩時間</span>
+                        <strong class="mat-kv-v" id="mat-be-selected">--</strong>
+                    </div>
+                    <div class="mat-kv">
+                        <span class="mat-kv-k">基準の休憩時間</span>
+                        <strong class="mat-kv-v" id="mat-be-standard">--</strong>
+                    </div>
+                </div>
 
                 <label class="mat-radio-row">
                     <input type="radio" name="mat-be-choice" value="request" checked>
-                    例外休憩を申請して登録する
+                    <span class="mat-radio-text">例外休憩を申請して登録する</span>
                 </label>
-                <textarea id="mat-be-reason" class="mat-textarea" rows="2"
+                <textarea id="mat-be-reason" class="mat-textarea mat-radio-child" rows="2"
                     placeholder="理由（必須）"></textarea>
 
                 <label class="mat-radio-row">
                     <input type="radio" name="mat-be-choice" value="fix">
-                    休憩時間を<span id="mat-be-fix-label">基準</span>に修正して登録する
+                    <span class="mat-radio-text">休憩時間を<span id="mat-be-fix-label">基準</span>に修正して登録する</span>
                 </label>
 
                 <p class="mat-error" id="mat-be-error" style="display:none;"></p>
@@ -323,20 +329,20 @@ function mat_shortcode_render() {
         <div class="mat-modal" id="mat-overtime-modal" style="display:none;">
             <div class="mat-modal-inner">
                 <h3 class="mat-modal-title">残業時間が発生しています</h3>
-                <p class="mat-modal-text" id="mat-ot-summary"></p>
+                <div class="mat-modal-text" id="mat-ot-summary"></div>
 
                 <label class="mat-radio-row">
                     <input type="radio" name="mat-ot-choice" value="request" checked>
-                    残業を申請して登録する
+                    <span class="mat-radio-text">残業を申請して登録する</span>
                 </label>
-                <textarea id="mat-ot-reason" class="mat-textarea" rows="2"
+                <textarea id="mat-ot-reason" class="mat-textarea mat-radio-child" rows="2"
                     placeholder="理由（必須）"></textarea>
 
                 <label class="mat-radio-row">
                     <input type="radio" name="mat-ot-choice" value="fix">
-                    退勤時刻を修正する
+                    <span class="mat-radio-text">退勤時刻を修正する</span>
                 </label>
-                <input type="time" id="mat-ot-time" class="mat-input">
+                <input type="time" id="mat-ot-time" class="mat-input mat-radio-child">
 
                 <p class="mat-error" id="mat-ot-error" style="display:none;"></p>
                 <div class="mat-modal-actions">
