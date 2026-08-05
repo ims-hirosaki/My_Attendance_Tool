@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
  * admin-settings.php  v3.2.0
  *
  * 変更点（v3.2.0）:
- * - 打刻履歴に「始業 / 終業 / 残業時間 / アラート / 修正 / 修正ステータス」列を追加（要件定義書 §6.1）。
+ * - 打刻履歴に「始業 / 終業 / 残業時間 / アラート / 操作 / 修正ステータス」列を追加（要件定義書 §6.1）。
  * - アラートは保存せず、表示時に動的計算する（マスタ変更時の整合性を保つため）。
  * - 「修正」ボタンで admin-alert-modal.php の共通モーダルを開く。
  * - 管理者が打刻を修正した場合、始業・終業・残業をサーバ側で自動再計算する（§6.4）。
@@ -285,7 +285,8 @@ function mat_history_page_render() {
                 </div>
             </div>
 
-            <table class="widefat striped" style="margin-top:8px;">
+            <div style="margin-top:8px; max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch;">
+            <table class="widefat striped" style="min-width:1250px; table-layout:auto;">
                 <thead>
                     <tr>
                         <th style="width:100px;">日付</th>
@@ -297,14 +298,13 @@ function mat_history_page_render() {
                         <th style="width:70px;">終業</th>
                         <th style="width:80px;">残業時間</th>
                         <th>アラート</th>
-                        <th style="width:70px;">修正</th>
+                        <th style="width:70px;">操作</th>
                         <th style="width:110px;">修正ステータス</th>
-                        <th style="width:80px;">操作</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if ( empty( $logs ) ) : ?>
-                        <tr><td colspan="12" style="text-align:center;padding:20px;">データがありません。</td></tr>
+                        <tr><td colspan="11" style="text-align:center;padding:20px;">データがありません。</td></tr>
                     <?php else : ?>
                         <?php foreach ( $logs as $day ) :
                             $is_empty   = ! $day['has_data'];
@@ -315,6 +315,7 @@ function mat_history_page_render() {
                             $meta      = $alert_map[ $day['date_ymd'] ] ?? array( 'alerts' => array(), 'requests' => array() );
                             $alerts    = $meta['alerts'];
                             $has_alert = ! empty( $alerts );
+                            $has_request = ! empty( $meta['requests'] );
                         ?>
                             <tr data-id="<?php echo esc_attr( $day['id'] ); ?>" style="<?php echo $row_style; ?>">
                                 <td><?php echo esc_html( $day['date'] ); ?></td>
@@ -324,37 +325,40 @@ function mat_history_page_render() {
                                     <?php if ( ! empty( $day['is_overnight'] ) ) echo ' <span title="日跨ぎ">⏰</span>'; ?>
                                 </td>
                                 <td><?php echo esc_html( $day['break'] ?? '-' ); ?></td>
-                                <td style="font-size:.9em;"><?php echo esc_html( is_array( $day['notes'] ) ? implode( ' / ', $day['notes'] ) : '' ); ?></td>
+                                <?php $note_text = is_array( $day['notes'] ) ? implode( ' / ', $day['notes'] ) : ''; ?>
+                                <td style="font-size:.9em; max-width:140px;">
+                                    <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                        <?php echo esc_html( $note_text ); ?>
+                                    </div>
+                                </td>
                                 <td><?php echo esc_html( $day['rounded_in'] ?: '−' ); ?></td>
                                 <td><?php echo esc_html( $day['rounded_out'] ?: '−' ); ?></td>
                                 <td><?php echo esc_html( $day['overtime'] ?: '' ); ?></td>
                                 <td><?php echo mat_render_alert_badges( $alerts ); // phpcs:ignore WordPress.Security.EscapeOutput ?></td>
                                 <td>
-                                    <?php if ( $has_alert ) : ?>
+                                    <?php if ( $has_alert || $has_request ) : ?>
                                         <button class="button button-small mat-alert-fix-btn"
-                                            data-daily-id="<?php echo esc_attr( $day['id'] ); ?>">修正</button>
+                                            data-daily-id="<?php echo esc_attr( $day['id'] ); ?>"><?php echo $has_alert ? '修正' : '確認'; ?></button>
                                     <?php else : ?>
-                                        <button class="button button-small" disabled>修正</button>
+                                        <button class="button button-small edit-log"
+                                            data-id="<?php echo esc_attr( $day['id'] ); ?>"
+                                            data-in="<?php echo esc_attr( $day['in'] ?? '' ); ?>"
+                                            data-out="<?php echo esc_attr( $day['out'] ?? '' ); ?>"
+                                            data-break="<?php echo esc_attr( $day['break'] ?? '00:00' ); ?>"
+                                            data-notes="<?php echo esc_attr( $note_text ); ?>"
+                                            data-holiday="<?php echo $is_holiday ? '1' : '0'; ?>"
+                                            data-date-label="<?php echo esc_attr( $day['date'] ); ?>">
+                                            <?php echo $is_empty ? '登録' : '編集'; ?>
+                                        </button>
                                     <?php endif; ?>
                                 </td>
                                 <td><?php echo mat_render_status_badges( $meta['requests'] ); // phpcs:ignore WordPress.Security.EscapeOutput ?></td>
-                                <td>
-                                    <button class="button button-small edit-log"
-                                        data-id="<?php echo esc_attr( $day['id'] ); ?>"
-                                        data-in="<?php echo esc_attr( $day['in'] ?? '' ); ?>"
-                                        data-out="<?php echo esc_attr( $day['out'] ?? '' ); ?>"
-                                        data-break="<?php echo esc_attr( $day['break'] ?? '00:00' ); ?>"
-                                        data-notes="<?php echo esc_attr( is_array( $day['notes'] ) ? implode( ' / ', $day['notes'] ) : '' ); ?>"
-                                        data-holiday="<?php echo $is_holiday ? '1' : '0'; ?>"
-                                        data-date-label="<?php echo esc_attr( $day['date'] ); ?>">
-                                        <?php echo $is_empty ? '登録' : '編集'; ?>
-                                    </button>
-                                </td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
                 </tbody>
             </table>
+            </div>
         <?php else : ?>
             <div class="notice notice-info inline" style="margin-top: 20px; padding: 16px;">
                 <p style="margin: 0; font-size: 14px; font-weight: 600; color: #1d2327;">

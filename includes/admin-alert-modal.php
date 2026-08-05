@@ -194,7 +194,7 @@ function mat_render_alert_badges( array $alerts ) {
 
 		$html .= sprintf(
 			'<span style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.78em; font-weight:600;
-				background:%s; border:1px solid %s; color:%s; line-height:1.6;">%s</span>',
+				background:%s; border:1px solid %s; color:%s; line-height:1.6; white-space:nowrap;">%s</span>',
 			esc_attr( $c[0] ), esc_attr( $c[1] ), esc_attr( $c[2] ), esc_html( $a['label'] )
 		);
 	}

@@ -259,7 +259,8 @@ function mat_alert_list_read_filters( $source = null ) {
 function mat_alert_list_render_table( array $rows ) {
 	$dow = array( '日', '月', '火', '水', '木', '金', '土' );
 	?>
-	<table class="widefat striped">
+	<div style="max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch;">
+	<table class="widefat striped" style="min-width:1180px; table-layout:auto;">
 		<thead>
 			<tr>
 				<th style="width:80px;">社員CD</th>
@@ -310,6 +311,7 @@ function mat_alert_list_render_table( array $rows ) {
 			<?php endif; ?>
 		</tbody>
 	</table>
+	</div>
 	<p style="margin-top:8px; color:#666; font-size:0.9em;">
 		該当件数：<strong><?php echo count( $rows ); ?></strong> 件
 	</p>
