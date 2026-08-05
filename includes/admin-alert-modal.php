@@ -208,7 +208,7 @@ function mat_render_status_badges( array $requests ) {
 	$primary = $requests['overtime'] ?? ( $requests['break_exception'] ?? null );
 	if ( ! $primary ) return '';
 
-	$html   = '<div style="display:flex; flex-wrap:wrap; gap:4px;">';
+	$html   = '<div style="display:flex; flex-wrap:nowrap; gap:4px; white-space:nowrap;">';
 	$review = (int) $primary->review_status;
 	$appr   = (int) $primary->approval_status;
 
