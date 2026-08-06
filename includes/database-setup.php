@@ -155,6 +155,9 @@ function mat_create_tables() {
         'mat_time_unit'               => 30,
         'mat_overtime_threshold'      => 480,
         'mat_break_alert_mode'        => 'auto',
+        'mat_midnight_start'          => 1320,
+        'mat_midnight_end'            => 1740,
+        'mat_midnight_alert_since'    => '',
     );
     foreach ( $defaults as $key => $value ) {
         if ( get_option( $key ) === false ) {
@@ -220,6 +223,9 @@ function mat_migrate_existing_tables() {
         'is_overnight'      => "ADD COLUMN `is_overnight` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1=翌日（24時以降）に退勤打刻' AFTER `rounded_clock_out`",
         'break_master_id'   => "ADD COLUMN `break_master_id` BIGINT(20) NULL DEFAULT NULL COMMENT '適用した休憩マスタID' AFTER `break_minutes`",
         'time_unit'         => "ADD COLUMN `time_unit` SMALLINT NULL DEFAULT NULL COMMENT '打刻時点の単位時間（分）' AFTER `break_master_id`",
+        'midnight_span_minutes'   => "ADD COLUMN `midnight_span_minutes` SMALLINT UNSIGNED NULL DEFAULT NULL COMMENT '深夜該当時間（分）。始業・終業から自動計算' AFTER `time_unit`",
+        'midnight_break_minutes'  => "ADD COLUMN `midnight_break_minutes` SMALLINT UNSIGNED NULL DEFAULT NULL COMMENT '深夜休憩時間（分）。NULL=未確認 / 0=取らなかったと回答済み' AFTER `midnight_span_minutes`",
+        'midnight_minutes'        => "ADD COLUMN `midnight_minutes` SMALLINT UNSIGNED NULL DEFAULT NULL COMMENT '深夜時間（分）＝ span - break' AFTER `midnight_break_minutes`",
     );
 
     $clauses = array();
@@ -266,6 +272,9 @@ function mat_drop_tables() {
         'mat_time_unit',
         'mat_overtime_threshold',
         'mat_break_alert_mode',
+        'mat_midnight_start',
+        'mat_midnight_end',
+        'mat_midnight_alert_since',
     );
     foreach ( $option_keys as $key ) {
         delete_option( $key );

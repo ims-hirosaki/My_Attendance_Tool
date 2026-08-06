@@ -359,6 +359,98 @@ function mat_calc_overtime_minutes( $rounded_in, $rounded_out, $break_minutes ) 
 }
 
 // =========================================================
+//  5.5. 深夜時間管理（要件定義書 §3・§5）
+// =========================================================
+
+/**
+ * 深夜帯の設定値を取得する（work_date 0:00 起点の分）。
+ *
+ * @return array{start:int,end:int}
+ */
+function mat_get_midnight_window() {
+	$start = (int) get_option( 'mat_midnight_start', 1320 );
+	$end   = (int) get_option( 'mat_midnight_end', 1740 );
+	if ( $start < 0 || $end <= $start ) {
+		$start = 1320;
+		$end   = 1740;
+	}
+	return array( 'start' => $start, 'end' => $end );
+}
+
+/**
+ * 深夜帯の判定区間を返す（work_date 0:00 起点。前夜分＋当夜分）。
+ *
+ * @return array<int,array{0:int,1:int}>
+ */
+function mat_get_midnight_ranges() {
+	$window = mat_get_midnight_window();
+	$start  = $window['start'];
+	$end    = $window['end'];
+
+	$ranges = array();
+
+	$prev_start = max( 0, $start - 1440 );
+	$prev_end   = max( 0, $end - 1440 );
+	if ( $prev_end > $prev_start ) $ranges[] = array( $prev_start, $prev_end );
+
+	$ranges[] = array( $start, $end );
+
+	return $ranges;
+}
+
+/**
+ * 2つの区間の重なり（分）を返す。
+ */
+function mat_calc_range_overlap( $a_start, $a_end, $b_start, $b_end ) {
+	$overlap = min( $a_end, $b_end ) - max( $a_start, $b_start );
+	return $overlap > 0 ? $overlap : 0;
+}
+
+/**
+ * 始業・終業から深夜該当時間（分）を算出する。
+ *
+ * @param string|null $rounded_in  TIME（"08:30:00"）
+ * @param string|null $rounded_out TIME（"25:00:00" 可）
+ * @return int|null 判定不能時は null
+ */
+function mat_calc_midnight_span_minutes( $rounded_in, $rounded_out ) {
+	$in  = mat_parse_time_to_minutes( $rounded_in );
+	$out = mat_parse_time_to_minutes( $rounded_out );
+	if ( $in === null || $out === null ) return null;
+	if ( $out <= $in ) $out += 1440;
+
+	$span = 0;
+	foreach ( mat_get_midnight_ranges() as $range ) {
+		$span += mat_calc_range_overlap( $in, $out, $range[0], $range[1] );
+	}
+	return $span;
+}
+
+/**
+ * 深夜時間（分）＝ 深夜該当時間 − 深夜休憩時間 を算出する（公開API）。
+ *
+ * @param string|null $rounded_in
+ * @param string|null $rounded_out
+ * @param int|null    $midnight_break NULL のときは控除しない
+ * @return int|null
+ */
+function mat_calc_midnight_minutes( $rounded_in, $rounded_out, $midnight_break = null ) {
+	$span = mat_calc_midnight_span_minutes( $rounded_in, $rounded_out );
+	if ( $span === null ) return null;
+	if ( $midnight_break === null ) return $span;
+	return max( 0, $span - (int) $midnight_break );
+}
+
+/**
+ * 深夜アラートの対象期間内か（mat_midnight_alert_since による判定）。
+ */
+function mat_is_midnight_alert_target( $work_date ) {
+	$since = (string) get_option( 'mat_midnight_alert_since', '' );
+	if ( $since === '' ) return true;
+	return (string) $work_date >= $since;
+}
+
+// =========================================================
 //  6. 申請テーブル（wp_mat_work_request）
 // =========================================================
 
@@ -417,7 +509,7 @@ function mat_upsert_work_request( array $args ) {
 
 	$daily_id = (int) ( $args['daily_id'] ?? 0 );
 	$type     = (string) ( $args['request_type'] ?? '' );
-	if ( $daily_id <= 0 || ! in_array( $type, array( 'break_exception', 'overtime' ), true ) ) {
+	if ( $daily_id <= 0 || ! in_array( $type, array( 'break_exception', 'overtime', 'midnight_break' ), true ) ) {
 		return false;
 	}
 
@@ -578,11 +670,21 @@ function mat_recalc_daily_row( $daily_id ) {
 		$is_overnight = 0;
 	}
 
+	$rounded_in  = $in_min  === null ? null : mat_minutes_to_time_sql( mat_round_in_minutes( $in_min, $unit ) );
+	$rounded_out = $out_min === null ? null : mat_minutes_to_time_sql( mat_round_out_minutes( $out_min, $unit ) );
+
+	// 深夜該当時間を丸め値から再計算し、既存の深夜休憩（NULL＝未確認はそのまま維持）を用いて深夜時間を再計算する（要件定義書 §5.1）
+	$midnight_span = mat_calc_midnight_span_minutes( $rounded_in, $rounded_out );
+	$midnight_break = $row->midnight_break_minutes === null ? null : (int) $row->midnight_break_minutes;
+	$midnight_minutes = $midnight_span === null ? null : mat_calc_midnight_minutes( $rounded_in, $rounded_out, $midnight_break );
+
 	$data = array(
-		'rounded_clock_in'  => $in_min  === null ? null : mat_minutes_to_time_sql( mat_round_in_minutes( $in_min, $unit ) ),
-		'rounded_clock_out' => $out_min === null ? null : mat_minutes_to_time_sql( mat_round_out_minutes( $out_min, $unit ) ),
-		'is_overnight'      => $is_overnight,
-		'time_unit'         => $unit,
+		'rounded_clock_in'        => $rounded_in,
+		'rounded_clock_out'       => $rounded_out,
+		'is_overnight'            => $is_overnight,
+		'time_unit'               => $unit,
+		'midnight_span_minutes'   => $midnight_span,
+		'midnight_minutes'        => $midnight_minutes,
 	);
 	$wpdb->update( MAT_DAILY_TABLE, $data, array( 'id' => $daily_id ) );
 
@@ -636,6 +738,10 @@ function mat_decorate_daily_row( $row, array $requests = array() ) {
 		'labor_minutes'      => $calc['labor'],
 		'overtime_minutes'   => $calc['overtime'],
 		'standard_break'     => mat_get_standard_break_minutes( $calc['kousoku'] ),
+		'midnight_span_minutes'  => isset( $row->midnight_span_minutes )  ? (int) $row->midnight_span_minutes  : null,
+		'midnight_break_minutes' => isset( $row->midnight_break_minutes ) ? (int) $row->midnight_break_minutes : null,
+		'midnight_minutes'       => isset( $row->midnight_minutes )       ? (int) $row->midnight_minutes       : null,
+		'midnight_confirmed'     => isset( $row->midnight_break_minutes ) && $row->midnight_break_minutes !== null,
 		'note'               => $row->note,
 		'alerts'             => mat_build_row_alerts( $row, $requests ),
 		'requests'           => $requests,
