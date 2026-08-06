@@ -45,7 +45,106 @@ function mat_save_settings_handler() {
     $threshold = intval( $_POST['mat_overtime_threshold'] ?? 480 );
     update_option( 'mat_overtime_threshold', $threshold > 0 ? $threshold : 480 );
 
-    wp_redirect( admin_url( 'admin.php?page=mat-settings&saved=1' ) );
+    // 深夜時間帯（要件定義書 §7.6）：不正な入力の場合は既存値を維持し、この設定だけ保存しない
+    $midnight_error      = '';
+    $midnight_start_min  = mat_parse_time_to_minutes( sanitize_text_field( $_POST['mat_midnight_start'] ?? '' ) );
+    $midnight_end_min    = mat_parse_time_to_minutes( sanitize_text_field( $_POST['mat_midnight_end'] ?? '' ) );
+
+    if ( $midnight_start_min === null || $midnight_end_min === null ) {
+        $midnight_error = '深夜時間帯の形式が正しくありません（HH:MM で入力してください）。';
+    } elseif ( $midnight_start_min < 0 || $midnight_start_min > 2880 || $midnight_end_min < 0 || $midnight_end_min > 2880 ) {
+        $midnight_error = '深夜時間帯は 0〜2880分の範囲で入力してください。';
+    } elseif ( $midnight_start_min >= $midnight_end_min ) {
+        $midnight_error = '深夜時間帯の開始は終了より前の時刻にしてください。';
+    } elseif ( $midnight_end_min - $midnight_start_min > 1440 ) {
+        $midnight_error = '深夜時間帯は24時間（1440分）以内で指定してください。';
+    } else {
+        update_option( 'mat_midnight_start', $midnight_start_min );
+        update_option( 'mat_midnight_end', $midnight_end_min );
+    }
+
+    // 深夜アラート開始日（空欄可）
+    $midnight_alert_since = sanitize_text_field( $_POST['mat_midnight_alert_since'] ?? '' );
+    if ( $midnight_alert_since !== '' && ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $midnight_alert_since ) ) {
+        if ( $midnight_error === '' ) $midnight_error = '深夜アラート開始日の形式が正しくありません。';
+    } else {
+        update_option( 'mat_midnight_alert_since', $midnight_alert_since );
+    }
+
+    $redirect_url = admin_url( 'admin.php?page=mat-settings&saved=1' );
+    if ( $midnight_error !== '' ) {
+        $redirect_url .= '&mat_midnight_error=' . urlencode( $midnight_error );
+    }
+    wp_redirect( $redirect_url );
+    exit;
+}
+
+/**
+ * 深夜該当時間の一括再計算（要件定義書 §9.1）。
+ * 指定年月の既存行について丸め値から midnight_span_minutes / midnight_minutes を再計算する。
+ * midnight_break_minutes（従業員の申告）は変更しない。
+ *
+ * @return array{updated:int,skipped:int}
+ */
+function mat_bulk_recalc_midnight( $year_month ) {
+    global $wpdb;
+    if ( ! preg_match( '/^\d{4}-\d{2}$/', (string) $year_month ) ) {
+        return array( 'updated' => 0, 'skipped' => 0 );
+    }
+
+    $start = $year_month . '-01';
+    $end   = date( 'Y-m-t', strtotime( $start ) );
+
+    $rows = $wpdb->get_results( $wpdb->prepare(
+        "SELECT id, clock_in, clock_out, rounded_clock_in, rounded_clock_out, midnight_break_minutes
+         FROM " . MAT_DAILY_TABLE . "
+         WHERE work_date BETWEEN %s AND %s AND is_holiday = 0",
+        $start, $end
+    ) );
+
+    $updated = 0;
+    $skipped = 0;
+
+    foreach ( $rows as $r ) {
+        $rounded_in  = ! empty( $r->rounded_clock_in )  ? $r->rounded_clock_in  : $r->clock_in;
+        $rounded_out = ! empty( $r->rounded_clock_out ) ? $r->rounded_clock_out : $r->clock_out;
+
+        $span = mat_calc_midnight_span_minutes( $rounded_in, $rounded_out );
+        if ( $span === null ) {
+            $skipped++;
+            continue;
+        }
+
+        $midnight_break   = $r->midnight_break_minutes === null ? null : (int) $r->midnight_break_minutes;
+        $midnight_minutes = mat_calc_midnight_minutes( $rounded_in, $rounded_out, $midnight_break );
+
+        $wpdb->update( MAT_DAILY_TABLE,
+            array( 'midnight_span_minutes' => $span, 'midnight_minutes' => $midnight_minutes ),
+            array( 'id' => (int) $r->id )
+        );
+        $updated++;
+    }
+
+    return array( 'updated' => $updated, 'skipped' => $skipped );
+}
+
+add_action( 'admin_post_mat_recalc_midnight', 'mat_recalc_midnight_handler' );
+function mat_recalc_midnight_handler() {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( '権限がありません。' );
+    }
+    check_admin_referer( 'mat_recalc_midnight' );
+
+    $year_month = sanitize_text_field( $_POST['mat_recalc_year_month'] ?? '' );
+    if ( ! preg_match( '/^\d{4}-\d{2}$/', $year_month ) ) {
+        wp_redirect( admin_url( 'admin.php?page=mat-settings&mat_recalc_error=' . urlencode( '対象年月を選択してください。' ) ) );
+        exit;
+    }
+
+    $result = mat_bulk_recalc_midnight( $year_month );
+    $msg    = sprintf( '%s の深夜該当時間を再計算しました（更新 %d件 / スキップ %d件）。', $year_month, $result['updated'], $result['skipped'] );
+
+    wp_redirect( admin_url( 'admin.php?page=mat-settings&mat_recalc_done=' . urlencode( $msg ) ) );
     exit;
 }
 
@@ -63,6 +162,8 @@ function mat_settings_page_render() {
     $time_unit            = mat_get_time_unit();
     $break_alert_mode     = mat_get_break_alert_mode();
     $overtime_threshold   = mat_get_overtime_threshold();
+    $midnight_window      = mat_get_midnight_window();
+    $midnight_alert_since = (string) get_option( 'mat_midnight_alert_since', '' );
 
     $closing_options = array(
         0  => '末日',
@@ -78,6 +179,11 @@ function mat_settings_page_render() {
 
         <?php if ( isset( $_GET['saved'] ) ) : ?>
             <div class="notice notice-success is-dismissible"><p>設定を保存しました。</p></div>
+        <?php endif; ?>
+        <?php if ( isset( $_GET['mat_midnight_error'] ) ) : ?>
+            <div class="notice notice-error is-dismissible">
+                <p>深夜時間帯の設定は保存されませんでした：<?php echo esc_html( urldecode( $_GET['mat_midnight_error'] ) ); ?></p>
+            </div>
         <?php endif; ?>
 
         <form method="post" action="<?php echo admin_url( 'admin-post.php' ); ?>">
@@ -234,12 +340,74 @@ function mat_settings_page_render() {
                     </td>
                 </tr>
 
+                <!-- 深夜時間帯 -->
+                <tr>
+                    <th scope="row">深夜時間帯</th>
+                    <td>
+                        開始
+                        <input type="text" name="mat_midnight_start" class="small-text" placeholder="HH:MM"
+                            value="<?php echo esc_attr( mat_minutes_to_hm( $midnight_window['start'] ) ); ?>">
+                        〜 終了
+                        <input type="text" name="mat_midnight_end" class="small-text" placeholder="HH:MM"
+                            value="<?php echo esc_attr( mat_minutes_to_hm( $midnight_window['end'] ) ); ?>">
+                        <p class="description">
+                            ※終了は24時間超（29:00＝翌5:00）で入力します。<br>
+                            労働基準法第37条の深夜割増は 22:00〜翌5:00 が原則です。
+                        </p>
+                    </td>
+                </tr>
+
+                <!-- 深夜アラート開始日 -->
+                <tr>
+                    <th scope="row">深夜アラート開始日</th>
+                    <td>
+                        <input type="date" name="mat_midnight_alert_since" class="regular-text"
+                            value="<?php echo esc_attr( $midnight_alert_since ); ?>">
+                        <p class="description">
+                            この日付以降の勤務日のみ深夜休憩アラートの対象とします。<br>
+                            空欄にすると全期間が対象になります。運用開始前に導入日を設定してください（設定しないと過去の深夜勤務がすべて赤アラートになります）。
+                        </p>
+                    </td>
+                </tr>
+
             </table>
 
             <?php submit_button( '設定を保存' ); ?>
         </form>
 
         <?php mat_render_break_master_section(); ?>
+
+        <?php mat_render_midnight_recalc_section(); ?>
+    </div>
+    <?php
+}
+
+/**
+ * 深夜該当時間の一括再計算ツール（要件定義書 §9.1）。
+ */
+function mat_render_midnight_recalc_section() {
+    ?>
+    <div class="card" style="max-width:700px; margin-top:20px; padding:20px;">
+        <h2 style="margin-top:0;">🌙 深夜該当時間の一括再計算</h2>
+        <p style="color:#666; font-size:0.9em;">
+            指定した年月の既存データについて、丸め値（始業・終業）から深夜該当時間・深夜時間を再計算します。<br>
+            深夜休憩（従業員からの申告）は変更しません。深夜時間帯の設定を変更した後や、機能導入直後の既存データに対して実行してください。
+        </p>
+
+        <?php if ( isset( $_GET['mat_recalc_done'] ) ) : ?>
+            <div class="notice notice-success inline"><p><?php echo esc_html( urldecode( $_GET['mat_recalc_done'] ) ); ?></p></div>
+        <?php endif; ?>
+        <?php if ( isset( $_GET['mat_recalc_error'] ) ) : ?>
+            <div class="notice notice-error inline"><p><?php echo esc_html( urldecode( $_GET['mat_recalc_error'] ) ); ?></p></div>
+        <?php endif; ?>
+
+        <form method="post" action="<?php echo admin_url( 'admin-post.php' ); ?>">
+            <?php wp_nonce_field( 'mat_recalc_midnight' ); ?>
+            <input type="hidden" name="action" value="mat_recalc_midnight">
+            <input type="month" name="mat_recalc_year_month" required value="<?php echo esc_attr( current_time( 'Y-m' ) ); ?>">
+            <input type="submit" class="button button-primary" value="再計算を実行"
+                onclick="return confirm('指定した年月の深夜該当時間・深夜時間を再計算します。よろしいですか？');">
+        </form>
     </div>
     <?php
 }
