@@ -376,8 +376,20 @@ function mat_shortcode_render() {
                     深夜時間に休憩は取らなかった
                 </button>
                 <div id="mat-mn-none-box" style="display:none; margin-top:10px;">
-                    <textarea id="mat-mn-none-reason" class="mat-textarea" rows="2"
-                        placeholder="理由（必須）例：積込待機のため"></textarea>
+                    <label class="mat-radio-row">
+                        <input type="radio" name="mat-mn-none-choice" value="short" checked>
+                        <span class="mat-radio-text">短時間だった為</span>
+                    </label>
+                    <label class="mat-radio-row">
+                        <input type="radio" name="mat-mn-none-choice" value="already">
+                        <span class="mat-radio-text">深夜時間外に既に休憩済み</span>
+                    </label>
+                    <label class="mat-radio-row">
+                        <input type="radio" name="mat-mn-none-choice" value="other">
+                        <span class="mat-radio-text">その他</span>
+                    </label>
+                    <textarea id="mat-mn-none-reason" class="mat-textarea mat-radio-child" rows="2"
+                        placeholder="その他の理由（必須）" style="display:none;"></textarea>
                     <button type="button" id="mat-mn-none-ok" class="mat-btn mat-btn-primary mat-btn-full" style="margin-top:8px;">
                         この内容で登録
                     </button>

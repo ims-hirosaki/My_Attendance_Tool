@@ -558,7 +558,8 @@ jQuery(document).ready(function ($) {
         $('#mat-mn-window').text(d.midnight_window_label);
         $('#mat-mn-minutes').val('');
         $('#mat-mn-none-box').hide();
-        $('#mat-mn-none-reason').val('');
+        $('input[name="mat-mn-none-choice"][value="short"]').prop('checked', true);
+        $('#mat-mn-none-reason').val('').hide();
         clearError('mat-mn-error');
         showModal('#mat-midnight-modal', d);
     }
@@ -595,9 +596,25 @@ jQuery(document).ready(function ($) {
         $('#mat-mn-none-box').show();
     });
 
+    var matMnNoneReasons = {
+        short:   '短時間だった為',
+        already: '深夜時間外に既に休憩済み'
+    };
+
+    $(document).on('change', 'input[name="mat-mn-none-choice"]', function () {
+        $('#mat-mn-none-reason').toggle($(this).val() === 'other');
+    });
+
     $('#mat-mn-none-ok').on('click', function () {
-        var reason = $.trim($('#mat-mn-none-reason').val());
-        if (!reason) { setError('mat-mn-error', '深夜時間に休憩を取らなかった理由を入力してください。'); return; }
+        var choice = $('input[name="mat-mn-none-choice"]:checked').val();
+        var reason;
+
+        if (choice === 'other') {
+            reason = $.trim($('#mat-mn-none-reason').val());
+            if (!reason) { setError('mat-mn-error', 'その他の理由を入力してください。'); return; }
+        } else {
+            reason = matMnNoneReasons[choice];
+        }
 
         clockout.midnightBreak = 0;
         clockout.midnightReason = reason;
