@@ -164,6 +164,9 @@ function mat_get_grouped_data( $emp_master_id, $month = null ) {
                 'midnight'     => null,
                 'midnight_unconfirmed' => false,
                 'midnight_break_minutes' => null,
+                'has_break_out' => false,
+                'break_out_start' => '',
+                'break_out_end'   => '',
                 'notes'        => array(),
                 'paid_leave'   => null,
                 'is_holiday'   => false,
@@ -181,6 +184,7 @@ function mat_get_grouped_data( $emp_master_id, $month = null ) {
         $is_overnight = false;
         $midnight_display     = null;
         $midnight_unconfirmed = false;
+        $has_break_out        = false;
 
         if ( $is_holiday ) {
             $in    = '休日';
@@ -205,7 +209,9 @@ function mat_get_grouped_data( $emp_master_id, $month = null ) {
             $calc     = mat_calc_work_minutes(
                 $r->rounded_clock_in  ?? $r->clock_in,
                 $r->rounded_clock_out ?? $r->clock_out,
-                $r->break_minutes
+                $r->break_minutes,
+                $r->break_out_start ?? null,
+                $r->break_out_end   ?? null
             );
             $overtime = $calc['overtime'];
 
@@ -214,6 +220,10 @@ function mat_get_grouped_data( $emp_master_id, $month = null ) {
             $midnight_span_val    = isset( $r->midnight_span_minutes ) ? (int) $r->midnight_span_minutes : null;
             $midnight_unconfirmed = ( $midnight_span_val !== null && $midnight_span_val > 0 && $r->midnight_break_minutes === null );
             $midnight_display     = ( $midnight_minutes_val !== null && $midnight_minutes_val > 0 ) ? mat_minutes_to_hm( $midnight_minutes_val ) : null;
+            // 中抜け（要件定義書 §12.4）：管理者専用項目。識別マークは日付／退勤セルに付与する
+            $has_break_out      = ! empty( $r->break_out_start ) && ! empty( $r->break_out_end );
+            $break_out_start_hm = $has_break_out ? mat_format_time_display( $r->break_out_start ) : '';
+            $break_out_end_hm   = $has_break_out ? mat_format_time_display( $r->break_out_end )   : '';
 
             if ( $in ) $work_days_count++;
         }
@@ -236,6 +246,9 @@ function mat_get_grouped_data( $emp_master_id, $month = null ) {
             'midnight'     => $midnight_display,
             'midnight_unconfirmed' => $midnight_unconfirmed,
             'midnight_break_minutes' => isset( $r->midnight_break_minutes ) ? (int) $r->midnight_break_minutes : null,
+            'has_break_out' => $has_break_out,
+            'break_out_start' => $break_out_start_hm,
+            'break_out_end'   => $break_out_end_hm,
             'notes'        => $r->note ? array( $r->note ) : array(),
             'paid_leave'   => null,
             'is_holiday'   => $is_holiday,
@@ -482,14 +495,14 @@ function mat_prepare_clockout_handler() {
     $rounded_in_time  = mat_minutes_to_time_sql( $rounded_in_min );
     $rounded_out_time = mat_minutes_to_time_sql( $rounded_out_min );
 
-    $calc     = mat_calc_work_minutes( $rounded_in_time, $rounded_out_time, $break_minutes );
+    $calc     = mat_calc_work_minutes( $rounded_in_time, $rounded_out_time, $break_minutes, $row->break_out_start ?? null, $row->break_out_end ?? null );
     $standard_row     = mat_get_break_alert_mode() === 'auto'
         ? ( mat_get_auto_break_master( $calc['kousoku'] ) ?: mat_get_default_break_master() )
         : mat_get_default_break_master();
     $standard_minutes = mat_get_standard_break_minutes( $calc['kousoku'] );
 
     // 深夜該当時間の判定（要件定義書 §6.2・§6.7）。まだ深夜休憩の回答が無い日のみポップアップ④の対象とする。
-    $midnight_span          = mat_calc_midnight_span_minutes( $rounded_in_time, $rounded_out_time );
+    $midnight_span          = mat_calc_midnight_span_minutes( $rounded_in_time, $rounded_out_time, $row->break_out_start ?? null, $row->break_out_end ?? null );
     $midnight_window        = mat_get_midnight_window();
     $midnight_window_label  = mat_minutes_to_hm( $midnight_window['start'] ) . ' 〜 ' . mat_minutes_to_hm( $midnight_window['end'] );
     $needs_midnight_confirm = ! empty( $midnight_span ) && empty( $row->is_holiday ) && is_null( $row->midnight_break_minutes );
@@ -685,7 +698,7 @@ function mat_handle_clockout( $emp_master_id, $employee_code ) {
     // ---- 深夜休憩の確定（要件定義書 §6.7）----
     // midnight_span_minutes は該当があれば常にスナップショット保存する。
     // midnight_break_minutes は POST が無ければ既存値（通常はNULL＝未確認）を維持し、事後修正はしない。
-    $midnight_span          = mat_calc_midnight_span_minutes( $rounded_in, $rounded_out );
+    $midnight_span          = mat_calc_midnight_span_minutes( $rounded_in, $rounded_out, $row->break_out_start ?? null, $row->break_out_end ?? null );
     $midnight_break_minutes = $row->midnight_break_minutes === null ? null : (int) $row->midnight_break_minutes;
     $midnight_reason        = '';
     $midnight_input         = $_POST['midnight_break_minutes'] ?? '';
@@ -708,7 +721,7 @@ function mat_handle_clockout( $emp_master_id, $employee_code ) {
         if ( $midnight_reason === '' ) $midnight_reason = sprintf( '深夜休憩 %d分', $entered );
     }
 
-    $midnight_minutes = mat_calc_midnight_minutes( $rounded_in, $rounded_out, $midnight_break_minutes );
+    $midnight_minutes = mat_calc_midnight_minutes( $rounded_in, $rounded_out, $midnight_break_minutes, $row->break_out_start ?? null, $row->break_out_end ?? null );
 
     $data = array(
         'clock_out'               => $clock_out,

@@ -86,7 +86,7 @@ function mat_build_alert_modal_payload( $row ) {
 		);
 	}
 
-	// 深夜該当時間はクライアント側で出勤・退勤からライブ再計算するため、丸め単位のみ渡す
+	// 深夜該当時間・拘束時間はクライアント側で出勤・退勤からライブ再計算するため、丸め単位のみ渡す
 	$unit = ! empty( $row->time_unit ) ? (int) $row->time_unit : mat_get_time_unit();
 
 	return array(
@@ -105,6 +105,8 @@ function mat_build_alert_modal_payload( $row ) {
 		'overtime_text'   => $data['overtime_minutes'] ? mat_minutes_to_hm( $data['overtime_minutes'] ) : '0:00',
 		'standard_break'  => $data['standard_break'],
 		'midnight_break_minutes' => $data['midnight_break_minutes'],
+		'break_out_start' => $data['break_out_start'],
+		'break_out_end'   => $data['break_out_end'],
 		'note'     => (string) $row->note,
 		'alerts'   => $data['alerts'],
 		'sections' => $sections,
@@ -149,11 +151,32 @@ function mat_admin_save_alert_fix_handler() {
 	}
 	$break_minutes = $break_in === '' ? 0 : (int) $break_in;
 
-	// ---- 深夜休憩（要件定義書 §7.3） ----
 	$unit = ! empty( $row->time_unit ) ? (int) $row->time_unit : mat_get_time_unit();
 	$rounded_in_preview  = $in_min  !== null ? mat_minutes_to_time_sql( mat_round_in_minutes( $in_min, $unit ) )  : null;
 	$rounded_out_preview = $out_min !== null ? mat_minutes_to_time_sql( mat_round_out_minutes( $out_min, $unit ) ) : null;
-	$midnight_span_preview = mat_calc_midnight_span_minutes( $rounded_in_preview, $rounded_out_preview );
+
+	// ---- 中抜け（要件定義書 §12.4） ----
+	$break_out_enabled = ( ( $_POST['break_out_enabled'] ?? '0' ) === '1' );
+	$break_out_start   = null;
+	$break_out_end     = null;
+	if ( $break_out_enabled ) {
+		$bo_start_min = mat_parse_time_to_minutes( sanitize_text_field( $_POST['break_out_start'] ?? '' ) );
+		$bo_end_min   = mat_parse_time_to_minutes( sanitize_text_field( $_POST['break_out_end']   ?? '' ) );
+		if ( $bo_start_min === null || $bo_end_min === null ) {
+			wp_send_json_error( '中抜けの開始・終了時刻を入力してください。' );
+		}
+		$rounded_in_min_val  = mat_parse_time_to_minutes( $rounded_in_preview );
+		$rounded_out_min_val = mat_parse_time_to_minutes( $rounded_out_preview );
+		if ( $rounded_in_min_val === null || $rounded_out_min_val === null
+			|| $bo_start_min < $rounded_in_min_val || $bo_end_min <= $bo_start_min || $bo_end_min > $rounded_out_min_val ) {
+			wp_send_json_error( '中抜け時間は始業〜終業の範囲内で指定してください。' );
+		}
+		$break_out_start = mat_minutes_to_time_sql( $bo_start_min );
+		$break_out_end   = mat_minutes_to_time_sql( $bo_end_min );
+	}
+
+	// ---- 深夜休憩（要件定義書 §7.3） ----
+	$midnight_span_preview = mat_calc_midnight_span_minutes( $rounded_in_preview, $rounded_out_preview, $break_out_start, $break_out_end );
 
 	$midnight_input         = sanitize_text_field( $_POST['midnight_break_minutes'] ?? '' );
 	$midnight_break_minutes = null;
@@ -171,12 +194,20 @@ function mat_admin_save_alert_fix_handler() {
 		}
 	}
 
+	// ---- 拘束時間と休憩の整合チェック（要件定義書 §12.4 バリデーション3） ----
+	$kousoku_preview = mat_calc_work_minutes( $rounded_in_preview, $rounded_out_preview, $break_minutes, $break_out_start, $break_out_end )['kousoku'];
+	if ( $kousoku_preview !== null && $kousoku_preview - $break_minutes < 0 ) {
+		wp_send_json_error( '休憩時間が拘束時間を超えています。中抜けと休憩の入力をご確認ください。' );
+	}
+
 	$wpdb->update( MAT_DAILY_TABLE, array(
 		'clock_in'               => mat_minutes_to_time_sql( $in_min ),
 		'clock_out'              => mat_minutes_to_time_sql( $out_min ),
 		'break_minutes'          => $break_in === '' ? null : $break_minutes,
 		'note'                   => $note !== '' ? $note : null,
 		'midnight_break_minutes' => $midnight_break_minutes,
+		'break_out_start'        => $break_out_start,
+		'break_out_end'          => $break_out_end,
 	), array( 'id' => $daily_id ) );
 
 	// 出勤・退勤・休憩・深夜休憩を修正したので始業／終業／残業／深夜時間を再計算する（§6.4）
@@ -341,6 +372,18 @@ function mat_render_alert_modal() {
 					</td>
 				</tr>
 				<tr>
+					<th>中抜け</th>
+					<td>
+						<label><input type="checkbox" id="mat-alert-break-out-enabled"> 中抜けあり（同日2回勤務）</label>
+						<div id="mat-alert-break-out-fields" style="display:none; margin-top:6px;">
+							<input type="text" id="mat-alert-break-out-start" class="small-text" placeholder="HH:MM" style="width:80px;">
+							〜
+							<input type="text" id="mat-alert-break-out-end" class="small-text" placeholder="HH:MM" style="width:80px;">
+							<span style="margin-left:10px; color:#50575e;">中抜け時間：<strong id="mat-alert-break-out-minutes">−</strong></span>
+						</div>
+					</td>
+				</tr>
+				<tr>
 					<th>休憩</th>
 					<td>
 						<input type="number" id="mat-alert-break" class="small-text" min="0" max="1440" style="width:90px;"> 分
@@ -353,6 +396,10 @@ function mat_render_alert_modal() {
 						<input type="number" id="mat-alert-midnight-break" class="small-text" min="0" style="width:90px;"> 分
 						<span style="margin-left:14px; color:#50575e;">深夜該当：<strong id="mat-alert-midnight-span">−</strong></span>
 					</td>
+				</tr>
+				<tr id="mat-alert-calc-row" style="display:none;">
+					<th>拘束時間</th>
+					<td><strong id="mat-alert-calc-kousoku">0:00</strong>（自動計算）</td>
 				</tr>
 				<tr id="mat-alert-midnight-minutes-row" style="display:none;">
 					<th>深夜時間</th>
@@ -407,36 +454,74 @@ function mat_render_alert_modal() {
 			return Math.floor(min / 60) + '時間' + String(min % 60).padStart(2, '0') + '分';
 		}
 		function matFormatHM(min) {
+			if (min === null || isNaN(min)) return '--';
 			var sign = min < 0 ? '-' : '';
 			min = Math.abs(min);
 			return sign + String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
 		}
 
-		// 出勤・退勤（実打刻）→ 丸め値 → 深夜該当時間のライブプレビュー（サーバ側の再計算が正とする・§6.4）
-		function matCalcMidnightSpan(inStr, outStr, unit) {
-			var inMin = matParseHM(inStr), outMin = matParseHM(outStr);
-			if (inMin === null || outMin === null) return null;
+		var matOvertimeThreshold = <?php echo (int) mat_get_overtime_threshold(); ?>;
 
-			var roundedIn  = Math.ceil(inMin / unit) * unit;
-			var roundedOut = Math.floor(outMin / unit) * unit;
-			if (roundedOut <= roundedIn) roundedOut += 1440;
-
-			var start = matMidnightWindow.start, end = matMidnightWindow.end;
+		// 中抜けを除外した実勤務区間（要件定義書 §12.3）
+		function matGetWorkedRanges(inMin, outMin, boStartMin, boEndMin) {
+			if (boStartMin === null || boEndMin === null || boEndMin <= boStartMin || boStartMin < inMin || boEndMin > outMin) {
+				return [[inMin, outMin]];
+			}
 			var ranges = [];
+			if (boStartMin > inMin) ranges.push([inMin, boStartMin]);
+			if (boEndMin < outMin)  ranges.push([boEndMin, outMin]);
+			return ranges;
+		}
+
+		function matCalcMidnightSpanFromRanges(workedRanges) {
+			var start = matMidnightWindow.start, end = matMidnightWindow.end;
+			var midnightRanges = [];
 			var prevStart = Math.max(0, start - 1440), prevEnd = Math.max(0, end - 1440);
-			if (prevEnd > prevStart) ranges.push([prevStart, prevEnd]);
-			ranges.push([start, end]);
+			if (prevEnd > prevStart) midnightRanges.push([prevStart, prevEnd]);
+			midnightRanges.push([start, end]);
 
 			var span = 0;
-			ranges.forEach(function (r) {
-				var overlap = Math.min(roundedOut, r[1]) - Math.max(roundedIn, r[0]);
-				if (overlap > 0) span += overlap;
+			workedRanges.forEach(function (worked) {
+				midnightRanges.forEach(function (r) {
+					var overlap = Math.min(worked[1], r[1]) - Math.max(worked[0], r[0]);
+					if (overlap > 0) span += overlap;
+				});
 			});
 			return span;
 		}
 
-		function updateMidnightPreview() {
-			var span = matCalcMidnightSpan($('#mat-alert-in').val(), $('#mat-alert-out').val(), currentTimeUnit);
+		// 出勤・退勤（実打刻）→ 丸め値・中抜け除外 → 拘束・深夜該当時間のライブプレビュー（サーバ側の再計算が正とする・§6.4・§12.4）
+		function updatePreview() {
+			var inMin = matParseHM($('#mat-alert-in').val());
+			var outMin = matParseHM($('#mat-alert-out').val());
+			if (inMin === null || outMin === null) {
+				$('#mat-alert-midnight-row, #mat-alert-midnight-minutes-row, #mat-alert-calc-row').hide();
+				$('#mat-alert-break-out-minutes').text('−');
+				return;
+			}
+
+			var roundedIn  = Math.ceil(inMin / currentTimeUnit) * currentTimeUnit;
+			var roundedOut = Math.floor(outMin / currentTimeUnit) * currentTimeUnit;
+			if (roundedOut <= roundedIn) roundedOut += 1440;
+
+			var boEnabled  = $('#mat-alert-break-out-enabled').is(':checked');
+			var boStartMin = boEnabled ? matParseHM($('#mat-alert-break-out-start').val()) : null;
+			var boEndMin   = boEnabled ? matParseHM($('#mat-alert-break-out-end').val())   : null;
+			var boValid = (boEnabled && boStartMin !== null && boEndMin !== null
+				&& boEndMin > boStartMin && boStartMin >= roundedIn && boEndMin <= roundedOut);
+			$('#mat-alert-break-out-minutes').text(boValid ? matFormatMinutesJpPadded(boEndMin - boStartMin) : '−');
+
+			var workedRanges    = matGetWorkedRanges(roundedIn, roundedOut, boValid ? boStartMin : null, boValid ? boEndMin : null);
+			var breakOutMinutes = boValid ? (boEndMin - boStartMin) : 0;
+			var breakMinutes    = parseInt($('#mat-alert-break').val(), 10) || 0;
+			var kousoku         = roundedOut - roundedIn - breakOutMinutes;
+			var overtime        = Math.max(0, Math.max(0, kousoku - breakMinutes) - matOvertimeThreshold);
+
+			$('#mat-alert-calc-row').show();
+			$('#mat-alert-calc-kousoku').text(matFormatHM(kousoku));
+			$('#mat-alert-overtime').text(matFormatHM(overtime));
+
+			var span = matCalcMidnightSpanFromRanges(workedRanges);
 			if (!span || span <= 0) {
 				$('#mat-alert-midnight-row, #mat-alert-midnight-minutes-row').hide();
 				return;
@@ -448,7 +533,11 @@ function mat_render_alert_modal() {
 			var minutes = isNaN(breakVal) ? span : Math.max(0, span - breakVal);
 			$('#mat-alert-midnight-minutes').text(matFormatHM(minutes));
 		}
-		$(document).on('input', '#mat-alert-in, #mat-alert-out, #mat-alert-midnight-break', updateMidnightPreview);
+		$(document).on('input', '#mat-alert-in, #mat-alert-out, #mat-alert-break, #mat-alert-midnight-break, #mat-alert-break-out-start, #mat-alert-break-out-end', updatePreview);
+		$('#mat-alert-break-out-enabled').on('change', function () {
+			$('#mat-alert-break-out-fields').toggle($(this).is(':checked'));
+			updatePreview();
+		});
 
 		// 保存後の挙動はページ側で差し替え可能
 		if (typeof window.matAlertModalOnSaved !== 'function') {
@@ -511,7 +600,14 @@ function mat_render_alert_modal() {
 			$('#mat-alert-standard').text(d.standard_break === null ? '−' : d.standard_break);
 			$('#mat-alert-overtime').text(d.overtime_text);
 			$('#mat-alert-midnight-break').val(d.midnight_break_minutes === null ? '' : d.midnight_break_minutes);
-			updateMidnightPreview();
+
+			var hasBreakOut = !!(d.break_out_start && d.break_out_end);
+			$('#mat-alert-break-out-enabled').prop('checked', hasBreakOut);
+			$('#mat-alert-break-out-start').val(d.break_out_start || '');
+			$('#mat-alert-break-out-end').val(d.break_out_end || '');
+			$('#mat-alert-break-out-fields').toggle(hasBreakOut);
+
+			updatePreview();
 
 			var badges = '';
 			$.each(d.alerts || [], function(_, a) { badges += badgeHtml(a); });
@@ -594,6 +690,9 @@ function mat_render_alert_modal() {
 				clock_out:               $('#mat-alert-out').val(),
 				break_minutes:           $('#mat-alert-break').val(),
 				midnight_break_minutes:  $('#mat-alert-midnight-row').is(':visible') ? $('#mat-alert-midnight-break').val() : '',
+				break_out_enabled:       $('#mat-alert-break-out-enabled').is(':checked') ? '1' : '0',
+				break_out_start:         $('#mat-alert-break-out-start').val(),
+				break_out_end:           $('#mat-alert-break-out-end').val(),
 				note:                    $('#mat-alert-note').val(),
 				statuses:                statuses,
 				nonce:                   alertNonce

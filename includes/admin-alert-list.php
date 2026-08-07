@@ -332,6 +332,7 @@ function mat_alert_list_render_table( array $rows ) {
 						<td>
 							<?php echo esc_html( $d['clock_out'] ?: '-' ); ?>
 							<?php if ( ! empty( $d['is_overnight'] ) ) echo ' <span title="日跨ぎ">⏰</span>'; ?>
+							<?php if ( ! empty( $d['break_out_start'] ) && ! empty( $d['break_out_end'] ) ) echo ' <span title="中抜けあり">✂</span>'; ?>
 						</td>
 						<td><?php echo $d['break_minutes'] === null ? '-' : esc_html( $d['break_minutes'] ) . '分'; ?></td>
 						<td><?php echo esc_html( $d['rounded_clock_in'] ?: '−' ); ?></td>

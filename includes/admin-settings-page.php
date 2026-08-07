@@ -96,7 +96,8 @@ function mat_bulk_recalc_midnight( $year_month ) {
     $end   = date( 'Y-m-t', strtotime( $start ) );
 
     $rows = $wpdb->get_results( $wpdb->prepare(
-        "SELECT id, clock_in, clock_out, rounded_clock_in, rounded_clock_out, midnight_break_minutes
+        "SELECT id, clock_in, clock_out, rounded_clock_in, rounded_clock_out, midnight_break_minutes,
+                break_out_start, break_out_end
          FROM " . MAT_DAILY_TABLE . "
          WHERE work_date BETWEEN %s AND %s AND is_holiday = 0",
         $start, $end
@@ -109,14 +110,15 @@ function mat_bulk_recalc_midnight( $year_month ) {
         $rounded_in  = ! empty( $r->rounded_clock_in )  ? $r->rounded_clock_in  : $r->clock_in;
         $rounded_out = ! empty( $r->rounded_clock_out ) ? $r->rounded_clock_out : $r->clock_out;
 
-        $span = mat_calc_midnight_span_minutes( $rounded_in, $rounded_out );
+        // 中抜け（Phase 6）が設定されている場合は、その区間を除外して判定する（§12.3）
+        $span = mat_calc_midnight_span_minutes( $rounded_in, $rounded_out, $r->break_out_start, $r->break_out_end );
         if ( $span === null ) {
             $skipped++;
             continue;
         }
 
         $midnight_break   = $r->midnight_break_minutes === null ? null : (int) $r->midnight_break_minutes;
-        $midnight_minutes = mat_calc_midnight_minutes( $rounded_in, $rounded_out, $midnight_break );
+        $midnight_minutes = mat_calc_midnight_minutes( $rounded_in, $rounded_out, $midnight_break, $r->break_out_start, $r->break_out_end );
 
         $wpdb->update( MAT_DAILY_TABLE,
             array( 'midnight_span_minutes' => $span, 'midnight_minutes' => $midnight_minutes ),

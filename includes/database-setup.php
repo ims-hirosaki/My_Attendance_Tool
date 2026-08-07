@@ -226,6 +226,8 @@ function mat_migrate_existing_tables() {
         'midnight_span_minutes'   => "ADD COLUMN `midnight_span_minutes` SMALLINT UNSIGNED NULL DEFAULT NULL COMMENT '深夜該当時間（分）。始業・終業から自動計算' AFTER `time_unit`",
         'midnight_break_minutes'  => "ADD COLUMN `midnight_break_minutes` SMALLINT UNSIGNED NULL DEFAULT NULL COMMENT '深夜休憩時間（分）。NULL=未確認 / 0=取らなかったと回答済み' AFTER `midnight_span_minutes`",
         'midnight_minutes'        => "ADD COLUMN `midnight_minutes` SMALLINT UNSIGNED NULL DEFAULT NULL COMMENT '深夜時間（分）＝ span - break' AFTER `midnight_break_minutes`",
+        'break_out_start'         => "ADD COLUMN `break_out_start` TIME NULL DEFAULT NULL COMMENT '中抜け開始（管理者専用・24時間超表記可）' AFTER `midnight_minutes`",
+        'break_out_end'           => "ADD COLUMN `break_out_end` TIME NULL DEFAULT NULL COMMENT '中抜け終了（管理者専用・24時間超表記可）' AFTER `break_out_start`",
     );
 
     $clauses = array();

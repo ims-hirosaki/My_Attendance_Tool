@@ -331,14 +331,51 @@ function mat_validate_break_master_rows( $rows ) {
 // =========================================================
 
 /**
+ * 中抜け時間（分）を返す。両端が揃っていない、または順序が不正なら0（要件定義書 §12.3）。
+ */
+function mat_calc_break_out_minutes( $break_out_start, $break_out_end ) {
+	$start = mat_parse_time_to_minutes( $break_out_start );
+	$end   = mat_parse_time_to_minutes( $break_out_end );
+	if ( $start === null || $end === null || $end <= $start ) return 0;
+	return $end - $start;
+}
+
+/**
+ * 始業・終業から中抜け区間を除外した実勤務区間の配列を返す（要件定義書 §12.3）。
+ * 中抜けが未指定・不正、または勤務区間の範囲外の場合は始業〜終業をそのまま1区間として返す。
+ *
+ * @return array<int,array{0:int,1:int}> 例：array( array(540,1020), array(1260,1920) )
+ */
+function mat_get_worked_ranges( $rounded_in, $rounded_out, $break_out_start = null, $break_out_end = null ) {
+	$in  = mat_parse_time_to_minutes( $rounded_in );
+	$out = mat_parse_time_to_minutes( $rounded_out );
+	if ( $in === null || $out === null ) return array();
+	if ( $out <= $in ) $out += 1440;
+
+	$bo_start = mat_parse_time_to_minutes( $break_out_start );
+	$bo_end   = mat_parse_time_to_minutes( $break_out_end );
+
+	if ( $bo_start === null || $bo_end === null || $bo_end <= $bo_start || $bo_start < $in || $bo_end > $out ) {
+		return array( array( $in, $out ) );
+	}
+
+	$ranges = array();
+	if ( $bo_start > $in ) $ranges[] = array( $in, $bo_start );
+	if ( $bo_end < $out )  $ranges[] = array( $bo_end, $out );
+	return $ranges;
+}
+
+/**
  * 始業・終業・休憩から拘束／労働／残業を算出する。
  *
- * @param string|null $rounded_in  TIME（"08:30:00"）
- * @param string|null $rounded_out TIME（"25:00:00" 可）
+ * @param string|null $rounded_in       TIME（"08:30:00"）
+ * @param string|null $rounded_out      TIME（"25:00:00" 可）
  * @param int|null    $break_minutes
+ * @param string|null $break_out_start  中抜け開始（要件定義書 §12.3・Phase 6）
+ * @param string|null $break_out_end    中抜け終了
  * @return array{kousoku:int|null,labor:int|null,overtime:int|null,break:int}
  */
-function mat_calc_work_minutes( $rounded_in, $rounded_out, $break_minutes ) {
+function mat_calc_work_minutes( $rounded_in, $rounded_out, $break_minutes, $break_out_start = null, $break_out_end = null ) {
 	$break = (int) ( $break_minutes ?? 0 );
 	$in    = mat_parse_time_to_minutes( $rounded_in );
 	$out   = mat_parse_time_to_minutes( $rounded_out );
@@ -351,7 +388,7 @@ function mat_calc_work_minutes( $rounded_in, $rounded_out, $break_minutes ) {
 	// 旧データ等で out <= in の場合のみ翌日補正を行う。
 	if ( $out <= $in ) $out += 1440;
 
-	$kousoku = $out - $in;
+	$kousoku = $out - $in - mat_calc_break_out_minutes( $break_out_start, $break_out_end );
 	$labor   = max( 0, $kousoku - $break );
 
 	return array(
@@ -365,8 +402,8 @@ function mat_calc_work_minutes( $rounded_in, $rounded_out, $break_minutes ) {
 /**
  * 残業時間（分）を返す（公開API）。
  */
-function mat_calc_overtime_minutes( $rounded_in, $rounded_out, $break_minutes ) {
-	$calc = mat_calc_work_minutes( $rounded_in, $rounded_out, $break_minutes );
+function mat_calc_overtime_minutes( $rounded_in, $rounded_out, $break_minutes, $break_out_start = null, $break_out_end = null ) {
+	$calc = mat_calc_work_minutes( $rounded_in, $rounded_out, $break_minutes, $break_out_start, $break_out_end );
 	return $calc['overtime'] === null ? 0 : (int) $calc['overtime'];
 }
 
@@ -420,20 +457,24 @@ function mat_calc_range_overlap( $a_start, $a_end, $b_start, $b_end ) {
 
 /**
  * 始業・終業から深夜該当時間（分）を算出する。
+ * 中抜けが指定されている場合は、その区間を勤務区間から除外したうえで判定する（要件定義書 §12.3）。
  *
- * @param string|null $rounded_in  TIME（"08:30:00"）
- * @param string|null $rounded_out TIME（"25:00:00" 可）
+ * @param string|null $rounded_in       TIME（"08:30:00"）
+ * @param string|null $rounded_out      TIME（"25:00:00" 可）
+ * @param string|null $break_out_start  中抜け開始（Phase 6）
+ * @param string|null $break_out_end    中抜け終了
  * @return int|null 判定不能時は null
  */
-function mat_calc_midnight_span_minutes( $rounded_in, $rounded_out ) {
+function mat_calc_midnight_span_minutes( $rounded_in, $rounded_out, $break_out_start = null, $break_out_end = null ) {
 	$in  = mat_parse_time_to_minutes( $rounded_in );
 	$out = mat_parse_time_to_minutes( $rounded_out );
 	if ( $in === null || $out === null ) return null;
-	if ( $out <= $in ) $out += 1440;
 
 	$span = 0;
-	foreach ( mat_get_midnight_ranges() as $range ) {
-		$span += mat_calc_range_overlap( $in, $out, $range[0], $range[1] );
+	foreach ( mat_get_worked_ranges( $rounded_in, $rounded_out, $break_out_start, $break_out_end ) as $worked ) {
+		foreach ( mat_get_midnight_ranges() as $range ) {
+			$span += mat_calc_range_overlap( $worked[0], $worked[1], $range[0], $range[1] );
+		}
 	}
 	return $span;
 }
@@ -443,11 +484,13 @@ function mat_calc_midnight_span_minutes( $rounded_in, $rounded_out ) {
  *
  * @param string|null $rounded_in
  * @param string|null $rounded_out
- * @param int|null    $midnight_break NULL のときは控除しない
+ * @param int|null    $midnight_break   NULL のときは控除しない
+ * @param string|null $break_out_start  中抜け開始（Phase 6）
+ * @param string|null $break_out_end    中抜け終了
  * @return int|null
  */
-function mat_calc_midnight_minutes( $rounded_in, $rounded_out, $midnight_break = null ) {
-	$span = mat_calc_midnight_span_minutes( $rounded_in, $rounded_out );
+function mat_calc_midnight_minutes( $rounded_in, $rounded_out, $midnight_break = null, $break_out_start = null, $break_out_end = null ) {
+	$span = mat_calc_midnight_span_minutes( $rounded_in, $rounded_out, $break_out_start, $break_out_end );
 	if ( $span === null ) return null;
 	if ( $midnight_break === null ) return $span;
 	return max( 0, $span - (int) $midnight_break );
@@ -597,7 +640,7 @@ function mat_build_row_alerts( $row, array $requests = array() ) {
 	if ( ! $rounded_in )  $rounded_in  = $row->clock_in  ?? null;
 	if ( ! $rounded_out ) $rounded_out = $row->clock_out ?? null;
 
-	$calc     = mat_calc_work_minutes( $rounded_in, $rounded_out, $row->break_minutes ?? 0 );
+	$calc     = mat_calc_work_minutes( $rounded_in, $rounded_out, $row->break_minutes ?? 0, $row->break_out_start ?? null, $row->break_out_end ?? null );
 	$standard = mat_get_standard_break_minutes( $calc['kousoku'] );
 	$alerts   = array();
 
@@ -721,9 +764,13 @@ function mat_recalc_daily_row( $daily_id ) {
 	$rounded_out = $out_min === null ? null : mat_minutes_to_time_sql( mat_round_out_minutes( $out_min, $unit ) );
 
 	// 深夜該当時間を丸め値から再計算し、既存の深夜休憩（NULL＝未確認はそのまま維持）を用いて深夜時間を再計算する（要件定義書 §5.1）
-	$midnight_span = mat_calc_midnight_span_minutes( $rounded_in, $rounded_out );
-	$midnight_break = $row->midnight_break_minutes === null ? null : (int) $row->midnight_break_minutes;
-	$midnight_minutes = $midnight_span === null ? null : mat_calc_midnight_minutes( $rounded_in, $rounded_out, $midnight_break );
+	// 中抜け（Phase 6）が設定されている場合は、その区間を勤務区間から除外して判定する（§12.3）
+	$break_out_start = $row->break_out_start ?? null;
+	$break_out_end   = $row->break_out_end   ?? null;
+
+	$midnight_span    = mat_calc_midnight_span_minutes( $rounded_in, $rounded_out, $break_out_start, $break_out_end );
+	$midnight_break   = $row->midnight_break_minutes === null ? null : (int) $row->midnight_break_minutes;
+	$midnight_minutes = $midnight_span === null ? null : mat_calc_midnight_minutes( $rounded_in, $rounded_out, $midnight_break, $break_out_start, $break_out_end );
 
 	$data = array(
 		'rounded_clock_in'        => $rounded_in,
@@ -759,7 +806,10 @@ function mat_decorate_daily_row( $row, array $requests = array() ) {
 	$calc_in  = ! empty( $rounded_in )  ? $rounded_in  : ( $row->clock_in  ?? null );
 	$calc_out = ! empty( $rounded_out ) ? $rounded_out : ( $row->clock_out ?? null );
 
-	$calc = mat_calc_work_minutes( $calc_in, $calc_out, $row->break_minutes ?? 0 );
+	$break_out_start = $row->break_out_start ?? null;
+	$break_out_end   = $row->break_out_end   ?? null;
+
+	$calc = mat_calc_work_minutes( $calc_in, $calc_out, $row->break_minutes ?? 0, $break_out_start, $break_out_end );
 
 	// 実打刻の退勤表示（日跨ぎは 24時間超表記）
 	$out_min = mat_parse_time_to_minutes( $row->clock_out ?? null );
@@ -789,6 +839,9 @@ function mat_decorate_daily_row( $row, array $requests = array() ) {
 		'midnight_break_minutes' => isset( $row->midnight_break_minutes ) ? (int) $row->midnight_break_minutes : null,
 		'midnight_minutes'       => isset( $row->midnight_minutes )       ? (int) $row->midnight_minutes       : null,
 		'midnight_confirmed'     => isset( $row->midnight_break_minutes ) && $row->midnight_break_minutes !== null,
+		'break_out_start'    => $break_out_start ? mat_format_time_display( $break_out_start ) : null,
+		'break_out_end'      => $break_out_end   ? mat_format_time_display( $break_out_end )   : null,
+		'break_out_minutes'  => mat_calc_break_out_minutes( $break_out_start, $break_out_end ),
 		'note'               => $row->note,
 		'alerts'             => mat_build_row_alerts( $row, $requests ),
 		'requests'           => $requests,
