@@ -67,8 +67,10 @@ function mat_admin_edit_log_handler() {
     global $wpdb;
     $id         = intval( $_POST['id'] ?? 0 );
     // 24時間超（"25:10"）も受け付けるため mat_parse_time_to_minutes で正規化する
-    $clock_in   = mat_minutes_to_time_sql( mat_parse_time_to_minutes( sanitize_text_field( $_POST['clock_in']  ?? '' ) ) );
-    $clock_out  = mat_minutes_to_time_sql( mat_parse_time_to_minutes( sanitize_text_field( $_POST['clock_out'] ?? '' ) ) );
+    $clock_in_min  = mat_parse_time_to_minutes( sanitize_text_field( $_POST['clock_in']  ?? '' ) );
+    $clock_out_min = mat_parse_time_to_minutes( sanitize_text_field( $_POST['clock_out'] ?? '' ) );
+    $clock_in   = mat_minutes_to_time_sql( $clock_in_min );
+    $clock_out  = mat_minutes_to_time_sql( $clock_out_min );
     $break_hhmm = sanitize_text_field( $_POST['break_time'] ?? '00:00' );
     $note       = sanitize_textarea_field( $_POST['note']   ?? '' );
     $is_holiday = ( ( $_POST['is_holiday'] ?? '0' ) === '1' );
@@ -94,21 +96,49 @@ function mat_admin_edit_log_handler() {
         );
     } else {
         $break_minutes = mat_hhmm_to_minutes( $break_hhmm );
+
+        // ---- 深夜休憩（要件定義書 §7.2）----
+        // 保存後の丸め値から深夜該当時間を先に見積もり、バリデーションに使う。
+        $unit = ( $row && ! empty( $row->time_unit ) ) ? (int) $row->time_unit : mat_get_time_unit();
+        $rounded_in_preview  = $clock_in_min  !== null ? mat_minutes_to_time_sql( mat_round_in_minutes( $clock_in_min, $unit ) )  : null;
+        $rounded_out_preview = $clock_out_min !== null ? mat_minutes_to_time_sql( mat_round_out_minutes( $clock_out_min, $unit ) ) : null;
+        $midnight_span_preview = mat_calc_midnight_span_minutes( $rounded_in_preview, $rounded_out_preview );
+
+        $midnight_input         = sanitize_text_field( $_POST['midnight_break_minutes'] ?? '' );
+        $midnight_break_minutes = null;
+        if ( $midnight_input !== '' ) {
+            if ( ! is_numeric( $midnight_input ) || (int) $midnight_input < 0 ) {
+                wp_send_json_error( '深夜休憩は0以上の整数（分）で入力してください。' );
+            }
+            $midnight_break_minutes = (int) $midnight_input;
+
+            if ( $midnight_span_preview !== null && $midnight_break_minutes > $midnight_span_preview ) {
+                wp_send_json_error( sprintf( '深夜休憩は深夜該当時間（%s）を超えられません。', mat_format_minutes_jp_padded( $midnight_span_preview ) ) );
+            }
+            if ( $midnight_break_minutes > (int) $break_minutes ) {
+                wp_send_json_error( '深夜休憩が休憩時間を超えています。休憩時間をご確認ください。' );
+            }
+        }
+
         $data_fields = array(
-            'clock_in'      => $clock_in  ?: null,
-            'clock_out'     => $clock_out ?: null,
-            'break_minutes' => $break_minutes,
-            'is_holiday'    => 0,
-            'note'          => $note ?: null,
+            'clock_in'                => $clock_in  ?: null,
+            'clock_out'               => $clock_out ?: null,
+            'break_minutes'           => $break_minutes,
+            'is_holiday'              => 0,
+            'note'                    => $note ?: null,
+            'midnight_break_minutes'  => $midnight_break_minutes,
         );
     }
 
-    // 休日化した場合は丸め値もクリアする
+    // 休日化した場合は丸め値・深夜3カラムもクリアする
     if ( $is_holiday ) {
-        $data_fields['rounded_clock_in']  = null;
-        $data_fields['rounded_clock_out'] = null;
-        $data_fields['is_overnight']      = 0;
-        $data_fields['break_master_id']   = null;
+        $data_fields['rounded_clock_in']       = null;
+        $data_fields['rounded_clock_out']      = null;
+        $data_fields['is_overnight']           = 0;
+        $data_fields['break_master_id']        = null;
+        $data_fields['midnight_span_minutes']  = null;
+        $data_fields['midnight_break_minutes'] = null;
+        $data_fields['midnight_minutes']       = null;
     }
 
     if ( $row ) {
@@ -122,6 +152,7 @@ function mat_admin_edit_log_handler() {
         } else {
             $wpdb->delete( MAT_WORK_REQUEST_TABLE, array( 'daily_id' => $id ), array( '%d' ) );
         }
+        $target_id = $id;
     } else {
         // ② 空行からの登録時は「INSERT」を実行
         if ( empty( $employee_code ) || empty( $work_date ) ) {
@@ -138,7 +169,21 @@ function mat_admin_edit_log_handler() {
         $inserted = $wpdb->insert( MAT_DAILY_TABLE, $data_fields );
         if ( ! $inserted ) wp_send_json_error( '新規データの登録に失敗しました。' );
 
-        if ( ! $is_holiday ) mat_recalc_daily_row( (int) $wpdb->insert_id );
+        $target_id = (int) $wpdb->insert_id;
+        if ( ! $is_holiday ) mat_recalc_daily_row( $target_id );
+    }
+
+    // 管理者が深夜休憩を入力し、該当の申請がまだ無い場合は admin 申請として新規作成する（既存の赤アラート対応と同じ挙動）
+    if ( ! $is_holiday && isset( $midnight_break_minutes ) && $midnight_break_minutes !== null ) {
+        $existing = mat_get_work_requests_by_daily( $target_id );
+        if ( empty( $existing['midnight_break'] ) ) {
+            mat_upsert_work_request( array(
+                'daily_id'     => $target_id,
+                'request_type' => 'midnight_break',
+                'reason'       => $midnight_break_minutes === 0 ? '管理者による登録（休憩なし）' : sprintf( '管理者による登録（%d分）', $midnight_break_minutes ),
+                'requested_by' => 'admin',
+            ) );
+        }
     }
 
     wp_send_json_success();
@@ -299,6 +344,7 @@ function mat_history_page_render() {
                         <th style="width:70px;">始業</th>
                         <th style="width:70px;">終業</th>
                         <th style="width:80px;">残業時間</th>
+                        <th style="width:80px;">深夜時間</th>
                         <th>アラート</th>
                         <th style="width:70px;">操作</th>
                         <th style="width:110px;">修正ステータス</th>
@@ -306,7 +352,7 @@ function mat_history_page_render() {
                 </thead>
                 <tbody>
                     <?php if ( empty( $logs ) ) : ?>
-                        <tr><td colspan="11" style="text-align:center;padding:20px;">データがありません。</td></tr>
+                        <tr><td colspan="12" style="text-align:center;padding:20px;">データがありません。</td></tr>
                     <?php else : ?>
                         <?php foreach ( $logs as $day ) :
                             $is_empty   = ! $day['has_data'];
@@ -336,6 +382,7 @@ function mat_history_page_render() {
                                 <td><?php echo esc_html( $day['rounded_in'] ?: '−' ); ?></td>
                                 <td><?php echo esc_html( $day['rounded_out'] ?: '−' ); ?></td>
                                 <td><?php echo esc_html( $day['overtime'] ?: '' ); ?></td>
+                                <td><?php echo esc_html( $day['midnight'] ?: '-' ); ?></td>
                                 <td><?php echo mat_render_alert_badges( $alerts ); // phpcs:ignore WordPress.Security.EscapeOutput ?></td>
                                 <td>
                                     <?php if ( $has_alert || $has_request ) : ?>
@@ -349,7 +396,8 @@ function mat_history_page_render() {
                                             data-break="<?php echo esc_attr( $day['break'] ?? '00:00' ); ?>"
                                             data-notes="<?php echo esc_attr( $note_text ); ?>"
                                             data-holiday="<?php echo $is_holiday ? '1' : '0'; ?>"
-                                            data-date-label="<?php echo esc_attr( $day['date'] ); ?>">
+                                            data-date-label="<?php echo esc_attr( $day['date'] ); ?>"
+                                            data-midnight-break="<?php echo esc_attr( $day['midnight_break_minutes'] === null ? '' : $day['midnight_break_minutes'] ); ?>">
                                             <?php echo $is_empty ? '登録' : '編集'; ?>
                                         </button>
                                     <?php endif; ?>
@@ -390,6 +438,18 @@ function mat_history_page_render() {
                     </td>
                 </tr>
                 <tr><th>休憩</th><td><input type="time" id="edit-break" class="regular-text" value="00:00"></td></tr>
+                <tr id="edit-midnight-row" style="display:none;">
+                    <th>深夜休憩</th>
+                    <td>
+                        <input type="number" id="edit-midnight-break" class="small-text" min="0" step="1"> 分
+                        <span style="margin-left:10px; color:#50575e;">
+                            深夜該当：<strong id="edit-midnight-span">--</strong>（<span id="edit-midnight-window-label"></span>）
+                        </span>
+                        <p class="description" style="margin:4px 0 0;">
+                            空欄のまま保存すると未確認（NULL）を維持します。
+                        </p>
+                    </td>
+                </tr>
                 <tr><th>備考</th><td><textarea id="edit-notes" class="regular-text" rows="2"></textarea></td></tr>
                 <tr>
                     <th>休日</th>
@@ -411,7 +471,59 @@ function mat_history_page_render() {
     jQuery(function($) {
         var nonce    = '<?php echo wp_create_nonce( "mat_admin_nonce" ); ?>';
         var currentId = null;
-        var modalTargetDateYmd = ''; 
+        var modalTargetDateYmd = '';
+
+        // ---- 深夜該当時間のライブプレビュー（要件定義書 §7.2） ----
+        var matMidnightWindow = {
+            start: <?php echo (int) mat_get_midnight_window()['start']; ?>,
+            end:   <?php echo (int) mat_get_midnight_window()['end']; ?>
+        };
+        var matMidnightWindowLabel = '<?php
+            $w = mat_get_midnight_window();
+            echo esc_js( mat_minutes_to_hm( $w['start'] ) . ' 〜 ' . mat_minutes_to_hm( $w['end'] ) );
+        ?>';
+
+        function matParseHM(s) {
+            var m = /^(\d{1,3}):(\d{2})$/.exec($.trim(s || ''));
+            if (!m) return null;
+            return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+        }
+
+        function matCalcMidnightSpan(inStr, outStr) {
+            var inMin = matParseHM(inStr), outMin = matParseHM(outStr);
+            if (inMin === null || outMin === null) return null;
+            if (outMin <= inMin) outMin += 1440;
+
+            var start = matMidnightWindow.start, end = matMidnightWindow.end;
+            var ranges = [];
+            var prevStart = Math.max(0, start - 1440), prevEnd = Math.max(0, end - 1440);
+            if (prevEnd > prevStart) ranges.push([prevStart, prevEnd]);
+            ranges.push([start, end]);
+
+            var span = 0;
+            ranges.forEach(function (r) {
+                var overlap = Math.min(outMin, r[1]) - Math.max(inMin, r[0]);
+                if (overlap > 0) span += overlap;
+            });
+            return span;
+        }
+
+        function matFormatMinutesJpPadded(min) {
+            if (min === null) return '--';
+            return Math.floor(min / 60) + '時間' + String(min % 60).padStart(2, '0') + '分';
+        }
+
+        function updateMidnightPreview() {
+            var span = matCalcMidnightSpan($('#edit-in').val(), $('#edit-out').val());
+            $('#edit-midnight-window-label').text(matMidnightWindowLabel);
+            if (!span || span <= 0) {
+                $('#edit-midnight-row').hide();
+                return;
+            }
+            $('#edit-midnight-row').show();
+            $('#edit-midnight-span').text(matFormatMinutesJpPadded(span));
+        }
+        $(document).on('input', '#edit-in, #edit-out', updateMidnightPreview);
 
         var selectedEmpCode = '<?php echo esc_js( $selected_emp ? $selected_emp->employee_code : '' ); ?>';
         var selectedEmpName = '<?php echo esc_js( $selected_emp ? $selected_emp->name : '' ); ?>';
@@ -493,6 +605,11 @@ function mat_history_page_render() {
         function toggleHolidayUI(isHoliday) {
             var opacity = isHoliday ? '0.5' : '1';
             $('#edit-in, #edit-out, #edit-break').prop('disabled', isHoliday).closest('tr').css('opacity', opacity);
+            if (isHoliday) {
+                $('#edit-midnight-row').hide();
+            } else {
+                updateMidnightPreview();
+            }
         }
 
         $(document).on('click', '.edit-log', function() {
@@ -518,9 +635,12 @@ function mat_history_page_render() {
             $('#edit-out').val($(this).data('out') || '');
             $('#edit-break').val($(this).data('break') || '00:00');
             $('#edit-notes').val($(this).data('notes') || '');
+            var midnightBreak = $(this).data('midnight-break');
+            $('#edit-midnight-break').val(midnightBreak === '' || midnightBreak === undefined ? '' : midnightBreak);
             var isHoliday = $(this).data('holiday') == '1';
             $('#edit-holiday').prop('checked', isHoliday);
             toggleHolidayUI(isHoliday);
+            updateMidnightPreview();
             $('#edit-error').hide();
             $('#mat-edit-modal').css('display', 'flex');
         });
@@ -553,6 +673,7 @@ function mat_history_page_render() {
                 break_time:    $('#edit-break').val() || '00:00',
                 note:          $('#edit-notes').val(),
                 is_holiday:    $('#edit-holiday').is(':checked') ? '1' : '0',
+                midnight_break_minutes: $('#edit-midnight-row').is(':visible') ? $('#edit-midnight-break').val() : '',
                 nonce:         nonce,
             }, function(res) {
                 if (res.success) { location.reload(); } else {

@@ -95,6 +95,15 @@ function mat_get_alert_rows( array $filters ) {
 		$alerts   = mat_build_row_alerts( $r, $requests );
 		if ( empty( $alerts ) ) continue;
 
+		// アラート種別フィルタ（要件定義書 §7.5）：選択された種別に該当するアラートだけに絞り込む
+		if ( ! empty( $filters['alert_types'] ) ) {
+			$alerts = array_values( array_filter( $alerts, function ( $a ) use ( $filters ) {
+				$type = mat_alert_code_to_request_type( $a['code'] );
+				return $type && in_array( $type, $filters['alert_types'], true );
+			} ) );
+			if ( empty( $alerts ) ) continue;
+		}
+
 		// 「未対応のみ」＝対応ステータス・承認ステータスの両方が未選択のアラート行
 		if ( ( $filters['status'] ?? 'unresolved' ) === 'unresolved' && ! mat_alerts_has_unresolved( $alerts ) ) {
 			continue;
@@ -172,6 +181,25 @@ function mat_alert_list_page_render() {
 						</label>
 					</label>
 
+					<label>
+						アラート種別：
+						<?php
+						$alert_type_options = array(
+							'break_exception' => '例外休憩',
+							'overtime'         => '残業',
+							'midnight_break'   => '深夜休憩',
+						);
+						foreach ( $alert_type_options as $val => $label ) :
+							$on = empty( $filters['alert_types'] ) || in_array( $val, $filters['alert_types'], true );
+						?>
+							<label style="margin-left:8px;">
+								<input type="checkbox" name="alert_types[]" value="<?php echo esc_attr( $val ); ?>"
+									<?php checked( $on ); ?>> <?php echo esc_html( $label ); ?>
+							</label>
+						<?php endforeach; ?>
+						<span style="font-size:0.78em; color:#888; margin-left:6px;">※全てOFFの場合は全種別が対象になります</span>
+					</label>
+
 					<input type="submit" class="button button-primary" value="表示">
 				</div>
 
@@ -245,11 +273,19 @@ function mat_alert_list_read_filters( $source = null ) {
 
 	$status = ( ( $src['status'] ?? 'unresolved' ) === 'all' ) ? 'all' : 'unresolved';
 
+	// アラート種別フィルタ（要件定義書 §7.5）：全てOFFの場合は job_types と同様、全種別を対象にする
+	$valid_alert_types = array( 'break_exception', 'overtime', 'midnight_break' );
+	$alert_types = isset( $src['alert_types'] )
+		? array_values( array_intersect( (array) $src['alert_types'], $valid_alert_types ) )
+		: array();
+	if ( count( $alert_types ) === count( $valid_alert_types ) ) $alert_types = array(); // 全選択＝絞り込みなし
+
 	return array(
 		'year_month'     => $year_month,
 		'affiliation_id' => isset( $src['affiliation_id'] ) ? (int) $src['affiliation_id'] : 0,
 		'job_types'      => isset( $src['job_types'] ) ? array_map( 'sanitize_text_field', (array) $src['job_types'] ) : array(),
 		'status'         => $status,
+		'alert_types'    => $alert_types,
 	);
 }
 
@@ -272,6 +308,7 @@ function mat_alert_list_render_table( array $rows ) {
 				<th style="width:65px;">始業</th>
 				<th style="width:65px;">終業</th>
 				<th style="width:80px;">残業時間</th>
+				<th style="width:80px;">深夜時間</th>
 				<th>アラート内容</th>
 				<th style="width:70px;">修正</th>
 				<th style="width:110px;">修正後ステータス</th>
@@ -279,7 +316,7 @@ function mat_alert_list_render_table( array $rows ) {
 		</thead>
 		<tbody>
 			<?php if ( empty( $rows ) ) : ?>
-				<tr><td colspan="12" style="text-align:center; padding:24px; color:#666;">
+				<tr><td colspan="13" style="text-align:center; padding:24px; color:#666;">
 					該当するアラートはありません。
 				</td></tr>
 			<?php else : ?>
@@ -300,6 +337,7 @@ function mat_alert_list_render_table( array $rows ) {
 						<td><?php echo esc_html( $d['rounded_clock_in'] ?: '−' ); ?></td>
 						<td><?php echo esc_html( $d['rounded_clock_out'] ?: '−' ); ?></td>
 						<td><?php echo $d['overtime_minutes'] ? esc_html( mat_minutes_to_hm( $d['overtime_minutes'] ) ) : ''; ?></td>
+						<td><?php echo $d['midnight_minutes'] ? esc_html( mat_minutes_to_hm( $d['midnight_minutes'] ) ) : '-'; ?></td>
 						<td><?php echo mat_render_alert_badges( $row['alerts'] ); // phpcs:ignore WordPress.Security.EscapeOutput ?></td>
 						<td>
 							<button class="button button-small mat-alert-fix-btn"

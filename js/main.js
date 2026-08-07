@@ -915,14 +915,22 @@ jQuery(document).ready(function ($) {
     $('#mat-edit-save').on('click', function () {
         if (!editTargetId) return;
         clearError('mat-edit-error');
+
+        // 出勤・退勤はテキスト入力（24時間超対応）のため、送信前にHH:MM形式を確認する
+        var timeRe = /^\d{1,3}:\d{2}$/;
+        var inVal = $.trim($('#mat-edit-in').val());
+        var outVal = $.trim($('#mat-edit-out').val());
+        if (inVal !== '' && !timeRe.test(inVal)) { setError('mat-edit-error', '出勤時刻の形式が正しくありません（HH:MM）。'); return; }
+        if (outVal !== '' && !timeRe.test(outVal)) { setError('mat-edit-error', '退勤時刻の形式が正しくありません（HH:MM）。'); return; }
+
         btnLoading($(this), true);
 
         $.post(ajaxurl, {
             action: 'mat_edit_log',
             id: editTargetId,
             emp_master_id: session.empMasterId,
-            clock_in: $('#mat-edit-in').val(),
-            clock_out: $('#mat-edit-out').val(),
+            clock_in: inVal,
+            clock_out: outVal,
             break_time: $('#mat-edit-break').val(),
             note: $('#mat-edit-note').val(),
             nonce: nonce,

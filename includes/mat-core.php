@@ -632,6 +632,30 @@ function mat_build_row_alerts( $row, array $requests = array() ) {
 		}
 	}
 
+	// ④ 深夜休憩（要件定義書 §7.1）
+	$midnight_span = isset( $row->midnight_span_minutes ) ? (int) $row->midnight_span_minutes : null;
+	if ( $midnight_span !== null && $midnight_span > 0 && mat_is_midnight_alert_target( $row->work_date ?? '' ) ) {
+		$req = $requests['midnight_break'] ?? null;
+		if ( $req ) {
+			$label = ( isset( $row->midnight_break_minutes ) && (int) $row->midnight_break_minutes === 0 )
+				? '深夜休憩なしの申告あり'
+				: sprintf( '深夜休憩申告あり（%d分）', (int) ( $row->midnight_break_minutes ?? 0 ) );
+			$alerts[] = array(
+				'code'     => 'MIDNIGHT_REQUESTED',
+				'color'    => 'blue',
+				'label'    => $label,
+				'resolved' => mat_is_request_resolved( $req ),
+			);
+		} else {
+			$alerts[] = array(
+				'code'     => 'MIDNIGHT_NO_REQUEST',
+				'color'    => 'red',
+				'label'    => '深夜勤務があります。深夜休憩の申告を確認してください。',
+				'resolved' => false,
+			);
+		}
+	}
+
 	return $alerts;
 }
 
@@ -643,6 +667,17 @@ function mat_alerts_has_unresolved( array $alerts ) {
 		if ( empty( $a['resolved'] ) ) return true;
 	}
 	return false;
+}
+
+/**
+ * アラートコードから対応する申請種別（wp_mat_work_request.request_type）を返す。
+ * 種別ごとのフィルタ・ステータス表示で使用する（要件定義書 §7.3・§7.5）。
+ */
+function mat_alert_code_to_request_type( $code ) {
+	if ( $code === 'BREAK_IRREGULAR' ) return 'break_exception';
+	if ( in_array( $code, array( 'OVERTIME_REQUESTED', 'OVERTIME_NO_REQUEST' ), true ) ) return 'overtime';
+	if ( in_array( $code, array( 'MIDNIGHT_REQUESTED', 'MIDNIGHT_NO_REQUEST' ), true ) ) return 'midnight_break';
+	return null;
 }
 
 // =========================================================

@@ -256,12 +256,15 @@ function mat_shortcode_render() {
                 <h3 class="mat-modal-title">打刻データの編集</h3>
                 <div class="mat-modal-row">
                     <label>出勤</label>
-                    <input type="time" id="mat-edit-in" class="mat-input">
+                    <input type="text" id="mat-edit-in" class="mat-input" placeholder="HH:MM">
                 </div>
                 <div class="mat-modal-row">
                     <label>退勤</label>
-                    <input type="time" id="mat-edit-out" class="mat-input">
+                    <input type="text" id="mat-edit-out" class="mat-input" placeholder="HH:MM">
                 </div>
+                <p class="mat-hint" style="margin:-8px 0 4px;">
+                    ※日跨ぎは 25:10 のように24時間超で入力してください。
+                </p>
                 <div class="mat-modal-row">
                     <label>休憩</label>
                     <input type="time" id="mat-edit-break" class="mat-input" value="00:00">
