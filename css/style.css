@@ -731,12 +731,21 @@ input[type="date"].mat-input {
     margin-left: 2px;
 }
 
+/* 深夜休憩未確認の識別マーク */
+.mat-midnight-mark {
+    font-size: 0.9em;
+    margin-left: 2px;
+    color: var(--mat-warning-dark);
+}
+
 /* ---- 退勤ポップアップ ---- */
 
 /* 退勤ポップアップは行数が多いため既定より広めにする */
 #mat-overnight-modal .mat-modal-inner,
 #mat-break-exception-modal .mat-modal-inner,
-#mat-overtime-modal .mat-modal-inner {
+#mat-overtime-modal .mat-modal-inner,
+#mat-midnight-modal .mat-modal-inner,
+#mat-midnight-rescue-modal .mat-modal-inner {
     width: 400px;
     padding: 22px 20px;
 }
@@ -839,7 +848,9 @@ textarea.mat-radio-child {
 @media (max-width: 480px) {
     #mat-overnight-modal .mat-modal-inner,
     #mat-break-exception-modal .mat-modal-inner,
-    #mat-overtime-modal .mat-modal-inner {
+    #mat-overtime-modal .mat-modal-inner,
+    #mat-midnight-modal .mat-modal-inner,
+    #mat-midnight-rescue-modal .mat-modal-inner {
         width: 100%;
         padding: 18px 14px;
     }

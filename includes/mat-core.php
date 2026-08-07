@@ -107,6 +107,18 @@ function mat_format_minutes_jp( $minutes ) {
 	return $sign . $h . '時間' . $m . '分';
 }
 
+/**
+ * 分数を「7時間00分」形式（分を必ず2桁で表示）に変換する。
+ * 深夜該当時間の表示など、0分を省略したくない場面で使用する。
+ */
+function mat_format_minutes_jp_padded( $minutes ) {
+	if ( $minutes === null || $minutes === '' ) return '';
+	$minutes = (int) $minutes;
+	$sign    = $minutes < 0 ? '-' : '';
+	$minutes = abs( $minutes );
+	return $sign . intdiv( $minutes, 60 ) . '時間' . sprintf( '%02d', $minutes % 60 ) . '分';
+}
+
 // =========================================================
 //  3. 丸め込み（要件定義書 §5.1）
 // =========================================================

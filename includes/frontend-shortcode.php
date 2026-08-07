@@ -181,6 +181,7 @@ function mat_shortcode_render() {
                             <th>出勤</th>
                             <th>退勤</th>
                             <th>休憩</th>
+                            <th>深夜</th>
                             <th>備考</th>
                             <th>休日</th>
                             <?php if ( mat_get_setting( 'allow_log_edit', false ) ) : ?>
@@ -189,7 +190,7 @@ function mat_shortcode_render() {
                         </tr>
                     </thead>
                     <tbody id="mat-history-body">
-                        <tr><td colspan="7" class="mat-loading">読み込み中...</td></tr>
+                        <tr><td colspan="8" class="mat-loading">読み込み中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -348,6 +349,56 @@ function mat_shortcode_render() {
                 <div class="mat-modal-actions">
                     <button type="button" id="mat-ot-cancel" class="mat-btn mat-btn-secondary">キャンセル</button>
                     <button type="button" id="mat-ot-ok" class="mat-btn mat-btn-primary">登録</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ======================== ④ 深夜休憩ポップアップ ======================== -->
+        <div class="mat-modal" id="mat-midnight-modal" style="display:none;">
+            <div class="mat-modal-inner">
+                <h3 class="mat-modal-title">深夜時間帯の勤務があります</h3>
+                <div class="mat-modal-text" id="mat-mn-summary"></div>
+
+                <p class="mat-hint" style="margin:10px 0 6px;">
+                    深夜時間帯（<span id="mat-mn-window"></span>）に休憩は取りましたか？
+                </p>
+
+                <div class="mat-modal-row">
+                    <label>深夜休憩</label>
+                    <input type="number" id="mat-mn-minutes" class="mat-input" min="0" step="1" placeholder="分">
+                </div>
+                <button type="button" id="mat-mn-register" class="mat-btn mat-btn-primary mat-btn-full">深夜の休憩を登録</button>
+
+                <button type="button" id="mat-mn-none-toggle" class="mat-btn mat-btn-secondary mat-btn-full" style="margin-top:8px;">
+                    深夜時間に休憩は取らなかった
+                </button>
+                <div id="mat-mn-none-box" style="display:none; margin-top:10px;">
+                    <textarea id="mat-mn-none-reason" class="mat-textarea" rows="2"
+                        placeholder="理由（必須）例：積込待機のため"></textarea>
+                    <button type="button" id="mat-mn-none-ok" class="mat-btn mat-btn-primary mat-btn-full" style="margin-top:8px;">
+                        この内容で登録
+                    </button>
+                </div>
+
+                <p class="mat-error" id="mat-mn-error" style="display:none;"></p>
+                <p class="mat-hint" style="margin-top:12px; font-size:0.82em;">
+                    ※登録後は修正できません。誤って登録した場合は管理者へご連絡ください。
+                </p>
+                <div class="mat-modal-actions">
+                    <button type="button" id="mat-mn-cancel" class="mat-btn mat-btn-secondary">キャンセル</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ======================== ④ 深夜休憩：総休憩との矛盾に対する救済ポップアップ ======================== -->
+        <div class="mat-modal" id="mat-midnight-rescue-modal" style="display:none;">
+            <div class="mat-modal-inner">
+                <h3 class="mat-modal-title">⚠ 深夜休憩が本日の休憩を超えています</h3>
+                <div class="mat-modal-text" id="mat-mnr-summary"></div>
+                <p class="mat-hint" id="mat-mnr-note" style="display:none; color:#c0392b;"></p>
+                <div class="mat-modal-actions" style="flex-direction:column; align-items:stretch;">
+                    <button type="button" id="mat-mnr-fix" class="mat-btn mat-btn-primary mat-btn-full">本日の休憩を修正して続ける</button>
+                    <button type="button" id="mat-mnr-retry" class="mat-btn mat-btn-secondary mat-btn-full" style="margin-top:8px;">深夜休憩を入力し直す</button>
                 </div>
             </div>
         </div>

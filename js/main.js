@@ -288,7 +288,7 @@ jQuery(document).ready(function ($) {
             if (!confirm('すでに休憩が登録されています。上書きしますか？')) return;
         }
 
-        // 退勤は①日跨ぎ →②例外休憩 →③残業 の順にポップアップで確認する
+        // 退勤は①日跨ぎ →②例外休憩 →③残業 →④深夜休憩 の順にポップアップで確認する
         if (label === '退勤') {
             startClockoutFlow($(this));
             return;
@@ -333,7 +333,7 @@ jQuery(document).ready(function ($) {
     });
 
     // =====================================================
-    //  退勤フロー（① 日跨ぎ → ② 例外休憩 → ③ 残業）
+    //  退勤フロー（① 日跨ぎ → ② 例外休憩 → ③ 残業 → ④ 深夜休憩）
     // =====================================================
 
     // フロー中の状態。修正が入るたびに prepare をやり直して再判定する。
@@ -345,7 +345,12 @@ jQuery(document).ready(function ($) {
         breakReason: '',
         overtimeReason: '',
         overnightConfirmed: false,
+        midnightBreak: null,   // null = ④未回答。0以上の整数になれば回答済み
+        midnightReason: '',
     };
+
+    // ④ の直前に受け取った prepare データ（救済フローからの再表示に使う）
+    var lastMidnightData = null;
 
     function startClockoutFlow($btn) {
         var step = currentBreakStep();
@@ -358,7 +363,10 @@ jQuery(document).ready(function ($) {
             breakFixed: false,
             overtimeReason: '',
             overnightConfirmed: false,
+            midnightBreak: null,
+            midnightReason: '',
         };
+        lastMidnightData = null;
         btnLoading($btn, true);
         isSubmitting = true;
         prepareClockout();
@@ -436,6 +444,12 @@ jQuery(document).ready(function ($) {
             return;
         }
 
+        // ④ 深夜休憩確認（③で退勤時刻が修正された後の値で判定する）
+        if (d.needs_midnight_confirm && clockout.midnightBreak === null) {
+            openMidnightModal(d);
+            return;
+        }
+
         submitClockout();
     }
 
@@ -451,6 +465,8 @@ jQuery(document).ready(function ($) {
             break_master_id: clockout.breakMasterId,
             break_reason: clockout.breakReason,
             overtime_reason: clockout.overtimeReason,
+            midnight_break_minutes: clockout.midnightBreak === null ? '' : clockout.midnightBreak,
+            midnight_break_reason: clockout.midnightReason,
             nonce: nonce,
         }, function (res) {
             endClockoutFlow();
@@ -524,12 +540,113 @@ jQuery(document).ready(function ($) {
         if (!newTime) { setError('mat-ot-error', '修正後の退勤時刻を入力してください。'); return; }
         clockout.override = newTime;
         $('#mat-overtime-modal').fadeOut(150);
-        // 修正後に再度①〜③の判定を行う
+        // 修正後に再度①〜④の判定を行う
         prepareClockout();
     });
     $('#mat-ot-cancel').on('click', function () {
         $('#mat-overtime-modal').fadeOut(150);
         endClockoutFlow();
+    });
+
+    // ---- ④ 深夜休憩 ----
+    function openMidnightModal(d) {
+        lastMidnightData = d;
+        $('#mat-mn-summary').html(
+            kvRow('深夜該当時間', esc(d.midnight_window_label) + ' のうち ' + esc(d.midnight_span_text))
+            + kvRow('本日の休憩', esc(d.break_minutes) + '分')
+        );
+        $('#mat-mn-window').text(d.midnight_window_label);
+        $('#mat-mn-minutes').val('');
+        $('#mat-mn-none-box').hide();
+        $('#mat-mn-none-reason').val('');
+        clearError('mat-mn-error');
+        showModal('#mat-midnight-modal', d);
+    }
+
+    $('#mat-mn-register').on('click', function () {
+        clearError('mat-mn-error');
+        var d = $('#mat-midnight-modal').data('prepared') || lastMidnightData || {};
+        var raw = $.trim($('#mat-mn-minutes').val());
+
+        if (raw === '' || !/^\d+$/.test(raw)) {
+            setError('mat-mn-error', '深夜休憩の分数を入力してください。');
+            return;
+        }
+        var minutes = parseInt(raw, 10);
+
+        if (typeof d.midnight_span === 'number' && minutes > d.midnight_span) {
+            setError('mat-mn-error', '深夜休憩は深夜該当時間（' + esc(d.midnight_span_text) + '）を超えられません。');
+            return;
+        }
+        if (minutes > (d.break_minutes || 0)) {
+            $('#mat-midnight-modal').fadeOut(150);
+            showMidnightRescue(minutes, d.break_minutes || 0);
+            return;
+        }
+
+        clockout.midnightBreak = minutes;
+        clockout.midnightReason = '';
+        $('#mat-midnight-modal').fadeOut(150);
+        submitClockout();
+    });
+
+    $('#mat-mn-none-toggle').on('click', function () {
+        clearError('mat-mn-error');
+        $('#mat-mn-none-box').show();
+    });
+
+    $('#mat-mn-none-ok').on('click', function () {
+        var reason = $.trim($('#mat-mn-none-reason').val());
+        if (!reason) { setError('mat-mn-error', '深夜時間に休憩を取らなかった理由を入力してください。'); return; }
+
+        clockout.midnightBreak = 0;
+        clockout.midnightReason = reason;
+        $('#mat-midnight-modal').fadeOut(150);
+        submitClockout();
+    });
+
+    $('#mat-mn-cancel').on('click', function () {
+        $('#mat-midnight-modal').fadeOut(150);
+        endClockoutFlow();
+    });
+
+    // ---- ④ 救済フロー（深夜休憩が本日の休憩を超えている場合） ----
+    function showMidnightRescue(enteredMinutes, currentBreakMinutes) {
+        var candidates = breakSteps.filter(function (s) { return s.minutes >= enteredMinutes; });
+        candidates.sort(function (a, b) { return a.minutes - b.minutes; });
+        var best = candidates.length ? candidates[0] : null;
+
+        $('#mat-mnr-summary').html(
+            '<p>深夜休憩（' + esc(enteredMinutes) + '分）が本日の休憩（' + esc(currentBreakMinutes) + '分）を超えています。</p>'
+            + '<p>深夜休憩は休憩時間の内数です。本日の休憩合計が' + esc(enteredMinutes) + '分以上である必要があります。</p>'
+        );
+
+        if (best) {
+            $('#mat-mnr-fix').show().text('本日の休憩を' + best.minutes + '分に修正して続ける').data('step-id', best.id);
+            $('#mat-mnr-note').hide();
+        } else {
+            $('#mat-mnr-fix').hide();
+            $('#mat-mnr-note').text('該当する休憩時間の設定がありません。管理者にご連絡ください。').show();
+        }
+
+        showModal('#mat-midnight-rescue-modal');
+    }
+
+    $('#mat-mnr-fix').on('click', function () {
+        var stepId = $(this).data('step-id');
+        if (stepId) clockout.breakMasterId = stepId;
+        // 休憩額が変わるため、②③④はすべて再判定させる
+        clockout.breakReason = '';
+        clockout.breakFixed = false;
+        clockout.midnightBreak = null;
+        clockout.midnightReason = '';
+        $('#mat-midnight-rescue-modal').fadeOut(150);
+        prepareClockout();
+    });
+
+    $('#mat-mnr-retry').on('click', function () {
+        $('#mat-midnight-rescue-modal').fadeOut(150);
+        if (lastMidnightData) openMidnightModal(lastMidnightData);
     });
 
     // 備考のみ保存
@@ -714,7 +831,7 @@ jQuery(document).ready(function ($) {
 
     function loadLogs() {
         var month = $('#mat-view-month').val() || getCurrentYearMonth();
-        $('#mat-history-body').html('<tr><td colspan="7" class="mat-loading">読み込み中...</td></tr>');
+        $('#mat-history-body').html('<tr><td colspan="8" class="mat-loading">読み込み中...</td></tr>');
         $.post(ajaxurl, {
             action: 'mat_get_logs',
             emp_master_id: session.empMasterId,
@@ -722,7 +839,7 @@ jQuery(document).ready(function ($) {
             nonce: nonce,
         }, function (res) {
             if (res.success) { renderLogs(res.data); } else {
-                $('#mat-history-body').html('<tr><td colspan="7" style="text-align:center;padding:16px;color:#999;">取得できませんでした。</td></tr>');
+                $('#mat-history-body').html('<tr><td colspan="8" style="text-align:center;padding:16px;color:#999;">取得できませんでした。</td></tr>');
             }
         });
     }
@@ -730,7 +847,7 @@ jQuery(document).ready(function ($) {
     function renderLogs(data) {
         if (data && data.today_ymd) matAjax.todayYmd = data.today_ymd;
         if (!data.logs || data.logs.length === 0) {
-            $('#mat-history-body').html('<tr><td colspan="7" class="mat-loading">データがありません。</td></tr>');
+            $('#mat-history-body').html('<tr><td colspan="8" class="mat-loading">データがありません。</td></tr>');
             refreshPunchButtons();
             return;
         }
@@ -745,7 +862,7 @@ jQuery(document).ready(function ($) {
             html += '<td>' + esc(row.date) + '</td>';
 
             if (isHoliday) {
-                html += '<td>-</td><td>-</td><td>-</td><td>-</td><td style="text-align:center;font-size:.9em;">🗓 休日</td>';
+                html += '<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td style="text-align:center;font-size:.9em;">🗓 休日</td>';
                 if (allowLogEdit) html += '<td style="color:#ccc;font-size:.8em;">-</td>';
             } else {
                 html += '<td>' + esc(row.in || '-') + '</td>';
@@ -753,6 +870,11 @@ jQuery(document).ready(function ($) {
                 var outText = row.out ? esc(row.out) + (row.is_overnight ? ' <span class="mat-overnight-mark" title="日跨ぎ">⏰</span>' : '') : '-';
                 html += '<td>' + outText + '</td>';
                 html += '<td>' + esc(row.break || '-') + '</td>';
+                // 深夜休憩が未確認（NULL）かつ深夜該当時間がある行は識別マークを付ける
+                var midnightText = row.midnight
+                    ? esc(row.midnight) + (row.midnight_unconfirmed ? ' <span class="mat-midnight-mark" title="深夜休憩未確認">⚠</span>' : '')
+                    : '-';
+                html += '<td>' + midnightText + '</td>';
                 var notes = Array.isArray(row.notes) ? row.notes.join(' / ') : '';
                 html += '<td style="text-align:left;">' + esc(notes) + '</td>';
                 html += '<td style="color:#ccc;font-size:.8em;">-</td>';
@@ -776,7 +898,7 @@ jQuery(document).ready(function ($) {
         if (session.empMasterId) loadLogs();
     });
 
-    // 打刻編集モーダル
+    // 打刻編集モーダル（深夜休憩は §6.6 により編集対象外のため、この画面には出さない）
     $(document).on('click', '.mat-edit-btn', function () {
         editTargetId = $(this).data('id');
         $('#mat-edit-in').val($(this).data('in') || '');
@@ -800,7 +922,7 @@ jQuery(document).ready(function ($) {
             id: editTargetId,
             emp_master_id: session.empMasterId,
             clock_in: $('#mat-edit-in').val(),
-            clock_out: $('#edit-out').val(),
+            clock_out: $('#mat-edit-out').val(),
             break_time: $('#mat-edit-break').val(),
             note: $('#mat-edit-note').val(),
             nonce: nonce,
