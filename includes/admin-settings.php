@@ -368,6 +368,7 @@ function mat_history_page_render() {
                 <thead>
                     <tr>
                         <th style="width:100px;">日付</th>
+                        <th style="width:70px;">長距離</th>
                         <th style="width:75px;">出勤<br><span style="font-weight:400;font-size:.85em;">(打刻)</span></th>
                         <th style="width:75px;">退勤<br><span style="font-weight:400;font-size:.85em;">(打刻)</span></th>
                         <th style="width:70px;">休憩</th>
@@ -383,7 +384,7 @@ function mat_history_page_render() {
                 </thead>
                 <tbody>
                     <?php if ( empty( $logs ) ) : ?>
-                        <tr><td colspan="12" style="text-align:center;padding:20px;">データがありません。</td></tr>
+                        <tr><td colspan="13" style="text-align:center;padding:20px;">データがありません。</td></tr>
                     <?php else : ?>
                         <?php foreach ( $logs as $day ) :
                             $is_empty   = ! $day['has_data'];
@@ -398,6 +399,7 @@ function mat_history_page_render() {
                         ?>
                             <tr data-id="<?php echo esc_attr( $day['id'] ); ?>" style="<?php echo $row_style; ?>">
                                 <td><?php echo esc_html( $day['date'] ); ?></td>
+                                <td style="text-align:center;"><?php echo ! empty( $day['long_distance'] ) ? 'ON' : '−'; ?></td>
                                 <td><?php echo esc_html( $day['in'] ?? '-' ); ?></td>
                                 <td>
                                     <?php echo esc_html( $day['out'] ?? '-' ); ?>

@@ -73,6 +73,7 @@ function mat_create_tables() {
         clock_in        TIME                NULL DEFAULT NULL     COMMENT '出勤時刻',
         clock_out       TIME                NULL DEFAULT NULL     COMMENT '退勤時刻',
         break_minutes   SMALLINT UNSIGNED   NULL DEFAULT NULL     COMMENT '休憩時間（分）',
+        long_distance   TINYINT(1)      NOT NULL DEFAULT 0        COMMENT '長距離業務フラグ 1=長距離',
         is_holiday      TINYINT(1)      NOT NULL DEFAULT 0        COMMENT '休日フラグ 1=休日',
         note            TEXT                NULL DEFAULT NULL     COMMENT '備考',
         created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -229,6 +230,7 @@ function mat_migrate_existing_tables() {
         'midnight_minutes'        => "ADD COLUMN `midnight_minutes` SMALLINT UNSIGNED NULL DEFAULT NULL COMMENT '深夜時間（分）＝ span - break' AFTER `midnight_break_minutes`",
         'break_out_start'         => "ADD COLUMN `break_out_start` TIME NULL DEFAULT NULL COMMENT '中抜け開始（管理者専用・24時間超表記可）' AFTER `midnight_minutes`",
         'break_out_end'           => "ADD COLUMN `break_out_end` TIME NULL DEFAULT NULL COMMENT '中抜け終了（管理者専用・24時間超表記可）' AFTER `break_out_start`",
+        'long_distance'           => "ADD COLUMN `long_distance` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '長距離業務フラグ 1=長距離' AFTER `break_minutes`",
     );
 
     $clauses = array();

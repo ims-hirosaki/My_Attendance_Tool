@@ -172,6 +172,7 @@ function mat_get_grouped_data( $emp_master_id, $month = null ) {
                 'is_holiday'   => false,
                 'can_edit'     => false,
                 'has_data'     => false,
+                'long_distance' => false,
             );
             continue;
         }
@@ -254,6 +255,7 @@ function mat_get_grouped_data( $emp_master_id, $month = null ) {
             'is_holiday'   => $is_holiday,
             'can_edit'     => $can_edit,
             'has_data'     => true,
+            'long_distance' => ! empty( $r->long_distance ),
         );
     }
 
@@ -553,6 +555,7 @@ function mat_attendance_update_handler() {
     $employee_code = sanitize_text_field( $_POST['employee_code'] ?? '' );
     $label         = sanitize_text_field( $_POST['label'] ?? '' );
     $note_input    = sanitize_textarea_field( $_POST['note'] ?? '' ); // フロント側から送られてくる現在の入力値
+    $long_distance = ( ( $_POST['long_distance'] ?? '0' ) === '1' ) ? 1 : 0;
     $today         = current_time( 'Y-m-d' );
     $now_time      = current_time( 'H:i:s' );
     $time_unit     = mat_get_time_unit();
@@ -584,6 +587,7 @@ function mat_attendance_update_handler() {
                     'clock_in'         => $now_time,
                     'rounded_clock_in' => $rounded_in,
                     'time_unit'        => $time_unit,
+                    'long_distance'    => ( ! empty( $row->long_distance ) || $long_distance ) ? 1 : 0,
                 ),
                 array( 'id' => (int) $row->id )
             );
@@ -595,6 +599,7 @@ function mat_attendance_update_handler() {
                 'clock_in'         => $now_time,
                 'rounded_clock_in' => $rounded_in,
                 'time_unit'        => $time_unit,
+                'long_distance'    => $long_distance,
                 'note'             => $note_input ?: null,
             ) );
         }
@@ -627,6 +632,7 @@ function mat_attendance_update_handler() {
             array(
                 'break_minutes'   => $break_minutes,
                 'break_master_id' => $break_master ? (int) $break_master->id : null,
+                'long_distance'   => ( ! empty( $row->long_distance ) || $long_distance ) ? 1 : 0,
             ),
             array( 'id' => (int) $row->id )
         );
@@ -667,6 +673,7 @@ function mat_handle_clockout( $emp_master_id, $employee_code ) {
 
     $override    = sanitize_text_field( $_POST['clock_out_override'] ?? '' );
     $forced_date = sanitize_text_field( $_POST['target_date'] ?? '' );
+    $long_distance = ( ( $_POST['long_distance'] ?? '0' ) === '1' ) ? 1 : 0;
 
     $target = mat_resolve_clockout_target( $emp_master_id, $override, $forced_date );
     if ( is_wp_error( $target ) ) wp_send_json_error( $target->get_error_message() );
@@ -734,6 +741,7 @@ function mat_handle_clockout( $emp_master_id, $employee_code ) {
         'midnight_span_minutes'   => $midnight_span,
         'midnight_break_minutes'  => $midnight_break_minutes,
         'midnight_minutes'        => $midnight_minutes,
+        'long_distance'           => ( ! empty( $row->long_distance ) || $long_distance ) ? 1 : 0,
     );
 
     // 退勤時刻を修正した場合は監査用に備考へ追記する（§5.3③）

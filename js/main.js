@@ -275,6 +275,7 @@ jQuery(document).ready(function ($) {
         $('#mat-note').val('');
         $('#mat-paid-leave-date').val('');
         $('#mat-holiday-date').val('');
+        $('#mat-long-distance').prop('checked', false);
         showSection('mat-section-code');
     });
 
@@ -299,6 +300,7 @@ jQuery(document).ready(function ($) {
             emp_master_id: session.empMasterId,
             employee_code: session.employeeCode,
             label: label,
+            long_distance: $('#mat-long-distance').is(':checked') ? 1 : 0,
             nonce: nonce,
         };
 
@@ -467,6 +469,7 @@ jQuery(document).ready(function ($) {
             overtime_reason: clockout.overtimeReason,
             midnight_break_minutes: clockout.midnightBreak === null ? '' : clockout.midnightBreak,
             midnight_break_reason: clockout.midnightReason,
+            long_distance: $('#mat-long-distance').is(':checked') ? 1 : 0,
             nonce: nonce,
         }, function (res) {
             endClockoutFlow();

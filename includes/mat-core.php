@@ -822,6 +822,7 @@ function mat_decorate_daily_row( $row, array $requests = array() ) {
 		'employee_code'      => $row->employee_code,
 		'work_date'          => $row->work_date,
 		'is_holiday'         => (bool) $row->is_holiday,
+		'long_distance'      => ! empty( $row->long_distance ),
 		'clock_in'           => mat_format_time_display( $row->clock_in ?? null ),
 		'clock_out'          => $out_min === null ? '' : mat_minutes_to_hm( $out_min ),
 		'break_minutes'      => isset( $row->break_minutes ) ? (int) $row->break_minutes : null,

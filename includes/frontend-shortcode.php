@@ -133,7 +133,16 @@ function mat_shortcode_render() {
                 <span id="mat-user-name"></span>
             </div>
 
-            <!-- 2. 出勤・退勤ボタン -->
+            <!-- 2. 長距離業務 -->
+            <div class="mat-long-distance-box">
+                <span class="mat-long-distance-label">長距離業務</span>
+                <label class="mat-switch">
+                    <input type="checkbox" id="mat-long-distance" value="1" aria-label="長距離業務">
+                    <span class="mat-switch-slider"></span>
+                </label>
+            </div>
+
+            <!-- 3. 出勤・退勤ボタン -->
             <div class="mat-punch-buttons">
                 <button class="mat-btn mat-btn-checkin mat-punch-btn"
                     data-label="出勤">出勤</button>
@@ -141,7 +150,7 @@ function mat_shortcode_render() {
                     data-label="退勤">退勤</button>
             </div>
 
-            <!-- 3. 休憩（休憩マスタ連動の離散スライダー） -->
+            <!-- 4. 休憩（休憩マスタ連動の離散スライダー） -->
             <div class="mat-break-box">
                 <div class="mat-break-header">
                     <span>休憩時間</span>

@@ -303,6 +303,57 @@
     margin-bottom: 16px;
 }
 
+/* ---- 長距離業務トグル ---- */
+.mat-long-distance-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 11px 14px;
+    margin-bottom: 16px;
+    border: 1px solid #dcdcde;
+    border-radius: var(--mat-radius);
+    background: #fff;
+}
+
+.mat-long-distance-label { font-weight: 700; color: var(--mat-text); }
+
+.mat-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 28px;
+    flex: 0 0 auto;
+}
+
+.mat-switch input { width: 0; height: 0; opacity: 0; }
+
+.mat-switch-slider {
+    position: absolute;
+    inset: 0;
+    cursor: pointer;
+    border-radius: 28px;
+    background: #b8b8b8;
+    transition: background .2s;
+}
+
+.mat-switch-slider::before {
+    content: '';
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    left: 3px;
+    bottom: 3px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .25);
+    transition: transform .2s;
+}
+
+.mat-switch input:checked + .mat-switch-slider { background: var(--mat-primary); }
+.mat-switch input:focus-visible + .mat-switch-slider { outline: 2px solid var(--mat-primary); outline-offset: 2px; }
+.mat-switch input:checked + .mat-switch-slider::before { transform: translateX(22px); }
+
 /* ---- 打刻ボタンペア ---- */
 .mat-punch-buttons {
     display: grid;

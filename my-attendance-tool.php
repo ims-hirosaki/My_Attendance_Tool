@@ -2,14 +2,14 @@
 /*
 Plugin Name: My Attendance Tool
 Description: 出退勤を記録するツール。employee-manager と連携して動作します。
-Version: 3.3.0
+Version: 3.4.0
 Author: 株式会社Ｉ・Ｍ・Ｓ
 */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 // ===== 定数定義 =====
-define( 'MAT_VERSION',  '3.3.0' );
+define( 'MAT_VERSION',  '3.4.0' );
 define( 'MAT_PATH',     plugin_dir_path( __FILE__ ) );
 define( 'MAT_URL',      plugin_dir_url( __FILE__ ) );
 
