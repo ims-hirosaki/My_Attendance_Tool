@@ -22,7 +22,7 @@ function mat_register_migrate_menu() {
         'my-attendance-settings',
         'DB移行ツール',
         '⚙ DB移行',
-        'manage_options',
+        'manage_custom_plugin_settings',
         'mat-migrate',
         'mat_migrate_page_render'
     );
@@ -33,7 +33,7 @@ function mat_register_migrate_menu() {
 // =========================================================
 
 function mat_migrate_page_render() {
-    if ( ! current_user_can( 'manage_options' ) ) return;
+    if ( ! current_user_can( 'manage_custom_plugin_settings' ) ) wp_die( '権限がありません。', '', array( 'response' => 403 ) );
 
     global $wpdb;
 
@@ -150,7 +150,7 @@ function mat_migrate_page_render() {
 
 add_action( 'admin_post_mat_run_migration', 'mat_run_migration_handler' );
 function mat_run_migration_handler() {
-    if ( ! current_user_can( 'manage_options' ) ) wp_die( '権限がありません。' );
+    if ( ! current_user_can( 'manage_custom_plugin_settings' ) ) wp_die( '権限がありません。' );
     check_admin_referer( 'mat_run_migration' );
 
     $result = mat_migrate_execute();

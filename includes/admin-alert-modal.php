@@ -25,7 +25,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 add_action( 'wp_ajax_mat_admin_get_alert_row', 'mat_admin_get_alert_row_handler' );
 function mat_admin_get_alert_row_handler() {
-	if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( '権限がありません。' );
+	if ( ! current_user_can( 'access_custom_plugins' ) ) wp_send_json_error( '権限がありません。' );
 	check_ajax_referer( 'mat_alert_nonce', 'nonce' );
 
 	global $wpdb;
@@ -119,7 +119,7 @@ function mat_build_alert_modal_payload( $row ) {
 
 add_action( 'wp_ajax_mat_admin_save_alert_fix', 'mat_admin_save_alert_fix_handler' );
 function mat_admin_save_alert_fix_handler() {
-	if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( '権限がありません。' );
+	if ( ! current_user_can( 'edit_custom_plugins' ) ) wp_send_json_error( '権限がありません。' );
 	check_ajax_referer( 'mat_alert_nonce', 'nonce' );
 
 	global $wpdb;

@@ -11,7 +11,7 @@ function mat_register_csv_import_page() {
         'my-attendance-settings',
         'CSV一括インポート',
         'CSV一括インポート',
-        'manage_options',
+        'access_custom_plugins',
         'mat-csv-import',
         'mat_csv_import_page_render'
     );
@@ -55,7 +55,7 @@ function mat_csv_import_enqueue() {
 add_action( 'admin_init', 'mat_csv_template_download' );
 function mat_csv_template_download() {
     if ( ( $_GET['mat_action'] ?? '' ) !== 'download_csv_template' ) return;
-    if ( ! current_user_can( 'manage_options' ) ) wp_die( '権限がありません。' );
+    if ( ! current_user_can( 'access_custom_plugins' ) ) wp_die( '権限がありません。' );
     check_admin_referer( 'mat_csv_template_download' );
 
     if ( ob_get_length() ) ob_clean();
@@ -95,7 +95,7 @@ function mat_csv_template_download() {
 
 add_action( 'wp_ajax_mat_csv_preview', 'mat_csv_preview_handler' );
 function mat_csv_preview_handler() {
-    if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( '権限がありません。' );
+    if ( ! current_user_can( 'access_custom_plugins' ) ) wp_send_json_error( '権限がありません。' );
     check_ajax_referer( 'mat_csv_import_nonce', 'nonce' );
 
     $rows_json = isset( $_POST['rows'] ) ? wp_unslash( $_POST['rows'] ) : '[]';
@@ -239,7 +239,7 @@ function mat_csv_preview_handler() {
 
 add_action( 'wp_ajax_mat_csv_import_chunk', 'mat_csv_import_chunk_handler' );
 function mat_csv_import_chunk_handler() {
-    if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( '権限がありません。' );
+    if ( ! current_user_can( 'edit_custom_plugins' ) ) wp_send_json_error( '権限がありません。' );
     check_ajax_referer( 'mat_csv_import_nonce', 'nonce' );
 
     // 大量データ処理のためタイムアウトを延長
@@ -372,7 +372,7 @@ function mat_csv_import_chunk_handler() {
 // =========================================================
 
 function mat_csv_import_page_render() {
-    if ( ! current_user_can( 'manage_options' ) ) return;
+    if ( ! current_user_can( 'access_custom_plugins' ) ) wp_die( '権限がありません。', '', array( 'response' => 403 ) );
 
     $template_url = wp_nonce_url(
         admin_url( 'admin.php?mat_action=download_csv_template' ),

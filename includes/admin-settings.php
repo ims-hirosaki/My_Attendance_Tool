@@ -25,12 +25,12 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 add_action( 'admin_menu', 'mat_register_admin_menu' );
 function mat_register_admin_menu() {
     add_menu_page(
-        '打刻ツール', '打刻ツール', 'manage_options',
+        '打刻ツール', '打刻ツール', 'access_custom_plugins',
         'my-attendance-settings', 'mat_history_page_render',
         'dashicons-clock', 30
     );
     add_submenu_page(
-        'my-attendance-settings', '打刻', '打刻', 'manage_options',
+        'my-attendance-settings', '打刻', '打刻', 'access_custom_plugins',
         'my-attendance-settings', 'mat_history_page_render'
     );
 }
@@ -61,7 +61,7 @@ function mat_admin_enqueue( $hook ) {
 // =========================================================
 add_action( 'wp_ajax_mat_admin_edit_log', 'mat_admin_edit_log_handler' );
 function mat_admin_edit_log_handler() {
-    if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( '権限がありません。' );
+    if ( ! current_user_can( 'edit_custom_plugins' ) ) wp_send_json_error( '権限がありません。' );
     check_ajax_referer( 'mat_admin_nonce', 'nonce' );
 
     global $wpdb;
@@ -225,7 +225,7 @@ function mat_admin_edit_log_handler() {
 // =========================================================
 add_action( 'wp_ajax_mat_admin_delete_log', 'mat_admin_delete_log_handler' );
 function mat_admin_delete_log_handler() {
-    if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( '権限がありません。' );
+    if ( ! current_user_can( 'edit_custom_plugins' ) ) wp_send_json_error( '権限がありません。' );
     check_ajax_referer( 'mat_admin_nonce', 'nonce' );
 
     global $wpdb;
@@ -246,7 +246,7 @@ function mat_admin_delete_log_handler() {
 //  勤怠履歴ページのレンダリング（全改修統合版）
 // =========================================================
 function mat_history_page_render() {
-    if ( ! current_user_can( 'manage_options' ) ) return;
+    if ( ! current_user_can( 'access_custom_plugins' ) ) wp_die( '権限がありません。', '', array( 'response' => 403 ) );
 
     $employees     = emp_get_active_employees();
     $job_types     = function_exists( 'emp_get_job_types' ) ? emp_get_job_types() : array();

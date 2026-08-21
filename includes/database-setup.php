@@ -210,6 +210,7 @@ function mat_seed_break_master() {
  */
 add_action( 'admin_init', 'mat_migrate_existing_tables' );
 function mat_migrate_existing_tables() {
+    if ( ! current_user_can( 'manage_custom_plugin_settings' ) ) return;
     global $wpdb;
 
     if ( ! $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', MAT_DAILY_TABLE ) ) ) return;

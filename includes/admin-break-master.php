@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 add_action( 'admin_post_mat_save_break_master', 'mat_save_break_master_handler' );
 function mat_save_break_master_handler() {
-	if ( ! current_user_can( 'manage_options' ) ) wp_die( '権限がありません。' );
+	if ( ! current_user_can( 'manage_custom_plugin_settings' ) ) wp_die( '権限がありません。' );
 	check_admin_referer( 'mat_save_break_master' );
 
 	global $wpdb;

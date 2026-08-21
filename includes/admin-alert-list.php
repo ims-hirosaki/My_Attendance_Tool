@@ -21,7 +21,7 @@ function mat_register_alert_list_menu() {
 		'my-attendance-settings',
 		'アラート一覧',
 		'⚠ アラート一覧',
-		'manage_options',
+		'access_custom_plugins',
 		'mat-alert-list',
 		'mat_alert_list_page_render'
 	);
@@ -130,7 +130,7 @@ function mat_get_alert_rows( array $filters ) {
 // =========================================================
 
 function mat_alert_list_page_render() {
-	if ( ! current_user_can( 'manage_options' ) ) return;
+	if ( ! current_user_can( 'access_custom_plugins' ) ) wp_die( '権限がありません。', '', array( 'response' => 403 ) );
 
 	$filters = mat_alert_list_read_filters();
 
@@ -363,7 +363,7 @@ function mat_alert_list_render_table( array $rows ) {
 
 add_action( 'wp_ajax_mat_refresh_alert_list', 'mat_refresh_alert_list_handler' );
 function mat_refresh_alert_list_handler() {
-	if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( '権限がありません。' );
+	if ( ! current_user_can( 'access_custom_plugins' ) ) wp_send_json_error( '権限がありません。' );
 	check_ajax_referer( 'mat_alert_list_nonce', 'nonce' );
 
 	// フォームのクエリ文字列をそのまま受け取り、同じ条件で再描画する

@@ -10,7 +10,7 @@ function mat_register_settings_page() {
         'my-attendance-settings',
         '打刻ツール設定',
         '設定',
-        'manage_options',
+        'manage_custom_plugin_settings',
         'mat-settings',
         'mat_settings_page_render'
     );
@@ -21,7 +21,7 @@ function mat_register_settings_page() {
  */
 add_action( 'admin_post_mat_save_settings', 'mat_save_settings_handler' );
 function mat_save_settings_handler() {
-    if ( ! current_user_can( 'manage_options' ) ) {
+    if ( ! current_user_can( 'manage_custom_plugin_settings' ) ) {
         wp_die( '権限がありません。' );
     }
     check_admin_referer( 'mat_save_settings' );
@@ -132,7 +132,7 @@ function mat_bulk_recalc_midnight( $year_month ) {
 
 add_action( 'admin_post_mat_recalc_midnight', 'mat_recalc_midnight_handler' );
 function mat_recalc_midnight_handler() {
-    if ( ! current_user_can( 'manage_options' ) ) {
+    if ( ! current_user_can( 'manage_custom_plugin_settings' ) ) {
         wp_die( '権限がありません。' );
     }
     check_admin_referer( 'mat_recalc_midnight' );
@@ -154,7 +154,7 @@ function mat_recalc_midnight_handler() {
  * 設定画面のレンダリング
  */
 function mat_settings_page_render() {
-    if ( ! current_user_can( 'manage_options' ) ) return;
+    if ( ! current_user_can( 'manage_custom_plugin_settings' ) ) wp_die( '権限がありません。', '', array( 'response' => 403 ) );
 
     $use_password         = (bool) get_option( 'mat_use_password_auth', 1 );
     $use_approval         = (bool) get_option( 'mat_use_paid_leave_approval', 1 );
