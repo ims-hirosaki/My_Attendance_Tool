@@ -10,7 +10,7 @@ function mat_register_auth_management_page() {
         'my-attendance-settings',
         '従業員認証管理',
         '従業員認証管理',
-        'manage_options',
+        'access_custom_plugins',
         'mat-auth-management',
         'mat_auth_management_page_render'
     );
@@ -21,7 +21,7 @@ function mat_register_auth_management_page() {
  */
 add_action( 'wp_ajax_mat_admin_reset_password', 'mat_admin_reset_password_handler' );
 function mat_admin_reset_password_handler() {
-    if ( ! current_user_can( 'manage_options' ) ) {
+    if ( ! current_user_can( 'edit_custom_plugins' ) ) {
         wp_send_json_error( '権限がありません。' );
     }
     check_ajax_referer( 'mat_admin_nonce', 'nonce' );
@@ -72,7 +72,7 @@ function mat_admin_reset_password_handler() {
  * 認証管理画面のレンダリング
  */
 function mat_auth_management_page_render() {
-    if ( ! current_user_can( 'manage_options' ) ) return;
+    if ( ! current_user_can( 'access_custom_plugins' ) ) wp_die( '権限がありません。', '', array( 'response' => 403 ) );
 
     // 在籍社員一覧を employee-manager から取得
     $employees = emp_get_active_employees();

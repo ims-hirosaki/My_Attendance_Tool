@@ -10,7 +10,7 @@ function mat_register_test_data_page() {
         'my-attendance-settings',
         'テストデータ削除',
         'テストデータ削除',
-        'manage_options',
+        'manage_custom_plugin_settings',
         'mat-test-data',
         'mat_test_data_page_render'
     );
@@ -22,7 +22,7 @@ function mat_register_test_data_page() {
 
 add_action( 'wp_ajax_mat_delete_test_data', 'mat_delete_test_data_handler' );
 function mat_delete_test_data_handler() {
-    if ( ! current_user_can( 'manage_options' ) ) {
+    if ( ! current_user_can( 'manage_custom_plugin_settings' ) ) {
         wp_send_json_error( '権限がありません。' );
     }
     check_ajax_referer( 'mat_admin_nonce', 'nonce' );
@@ -66,7 +66,7 @@ function mat_delete_test_data_handler() {
  */
 add_action( 'wp_ajax_mat_preview_delete', 'mat_preview_delete_handler' );
 function mat_preview_delete_handler() {
-    if ( ! current_user_can( 'manage_options' ) ) {
+    if ( ! current_user_can( 'manage_custom_plugin_settings' ) ) {
         wp_send_json_error( '権限がありません。' );
     }
     check_ajax_referer( 'mat_admin_nonce', 'nonce' );
@@ -107,7 +107,7 @@ function mat_preview_delete_handler() {
 
 add_action( 'wp_ajax_mat_preview_delete_paid_leave', 'mat_preview_delete_paid_leave_handler' );
 function mat_preview_delete_paid_leave_handler() {
-    if ( ! current_user_can( 'manage_options' ) ) {
+    if ( ! current_user_can( 'manage_custom_plugin_settings' ) ) {
         wp_send_json_error( '権限がありません。' );
     }
     check_ajax_referer( 'mat_admin_nonce', 'nonce' );
@@ -145,7 +145,7 @@ function mat_preview_delete_paid_leave_handler() {
 
 add_action( 'wp_ajax_mat_delete_paid_leave', 'mat_delete_paid_leave_handler' );
 function mat_delete_paid_leave_handler() {
-    if ( ! current_user_can( 'manage_options' ) ) {
+    if ( ! current_user_can( 'manage_custom_plugin_settings' ) ) {
         wp_send_json_error( '権限がありません。' );
     }
     check_ajax_referer( 'mat_admin_nonce', 'nonce' );
@@ -183,7 +183,7 @@ function mat_delete_paid_leave_handler() {
 // =========================================================
 
 function mat_test_data_page_render() {
-    if ( ! current_user_can( 'manage_options' ) ) return;
+    if ( ! current_user_can( 'manage_custom_plugin_settings' ) ) wp_die( '権限がありません。', '', array( 'response' => 403 ) );
 
     $employees = emp_get_active_employees();
     ?>
