@@ -159,6 +159,8 @@ function mat_get_grouped_data( $emp_master_id, $month = null ) {
                 'break'        => null,
                 'rounded_in'   => null,
                 'rounded_out'  => null,
+                'clock_in_unit' => mat_get_clock_in_unit(),
+                'clock_out_unit' => mat_get_clock_out_unit(),
                 'overtime'     => null,
                 'is_overnight' => false,
                 'midnight'     => null,
@@ -178,6 +180,7 @@ function mat_get_grouped_data( $emp_master_id, $month = null ) {
         }
 
         $is_holiday = (bool) $r->is_holiday;
+        $row_units  = mat_get_row_rounding_units( $r );
 
         $rounded_in   = null;
         $rounded_out  = null;
@@ -242,6 +245,8 @@ function mat_get_grouped_data( $emp_master_id, $month = null ) {
             'break'        => $break,
             'rounded_in'   => $rounded_in,
             'rounded_out'  => $rounded_out,
+            'clock_in_unit' => $row_units['in'],
+            'clock_out_unit' => $row_units['out'],
             'overtime'     => $overtime ? mat_minutes_to_hm( $overtime ) : null,
             'is_overnight' => $is_overnight,
             'midnight'     => $midnight_display,
@@ -475,7 +480,7 @@ function mat_prepare_clockout_handler() {
     if ( is_wp_error( $target ) ) wp_send_json_error( $target->get_error_message() );
 
     $row  = $target['row'];
-    $unit = ! empty( $row->time_unit ) ? (int) $row->time_unit : mat_get_time_unit();
+    $units = mat_get_row_rounding_units( $row );
 
     // 休憩：スライダーの選択を優先、なければ登録済みの値、それもなければ既定行
     $break_master = $break_master_id ? mat_get_break_master_by_id( $break_master_id ) : null;
@@ -491,8 +496,8 @@ function mat_prepare_clockout_handler() {
         $break_minutes = $break_master ? (int) $break_master->break_minutes : 0;
     }
 
-    $rounded_in_min  = mat_round_in_minutes( mat_parse_time_to_minutes( $row->clock_in ), $unit );
-    $rounded_out_min = mat_round_out_minutes( $target['clock_out_min'], $unit );
+    $rounded_in_min  = mat_round_in_minutes( mat_parse_time_to_minutes( $row->clock_in ), $units['in'] );
+    $rounded_out_min = mat_round_out_minutes( $target['clock_out_min'], $units['out'] );
 
     $rounded_in_time  = mat_minutes_to_time_sql( $rounded_in_min );
     $rounded_out_time = mat_minutes_to_time_sql( $rounded_out_min );
@@ -558,7 +563,8 @@ function mat_attendance_update_handler() {
     $long_distance = ( ( $_POST['long_distance'] ?? '0' ) === '1' ) ? 1 : 0;
     $today         = current_time( 'Y-m-d' );
     $now_time      = current_time( 'H:i:s' );
-    $time_unit     = mat_get_time_unit();
+    $clock_in_unit  = mat_get_clock_in_unit();
+    $clock_out_unit = mat_get_clock_out_unit();
 
     $emp = emp_get_employee_by_code( $employee_code );
     if ( ! $emp ) wp_send_json_error( '社員情報が見つかりません。' );
@@ -578,7 +584,7 @@ function mat_attendance_update_handler() {
         }
 
         // 丸め込み（繰り上げ）した始業を同時保存（§5.1）
-        $rounded_in = mat_round_clock_in( $now_time, $time_unit );
+        $rounded_in = mat_round_clock_in( $now_time, $clock_in_unit );
 
         if ( $row ) {
             // 【重要】備考先入れ後に一回出勤ボタンが押された場合
@@ -586,7 +592,9 @@ function mat_attendance_update_handler() {
                 array(
                     'clock_in'         => $now_time,
                     'rounded_clock_in' => $rounded_in,
-                    'time_unit'        => $time_unit,
+                    'time_unit'        => $clock_in_unit,
+                    'clock_in_unit'    => $clock_in_unit,
+                    'clock_out_unit'   => $clock_out_unit,
                     'long_distance'    => ( ! empty( $row->long_distance ) || $long_distance ) ? 1 : 0,
                 ),
                 array( 'id' => (int) $row->id )
@@ -598,7 +606,9 @@ function mat_attendance_update_handler() {
                 'work_date'        => $today,
                 'clock_in'         => $now_time,
                 'rounded_clock_in' => $rounded_in,
-                'time_unit'        => $time_unit,
+                'time_unit'        => $clock_in_unit,
+                'clock_in_unit'    => $clock_in_unit,
+                'clock_out_unit'   => $clock_out_unit,
                 'long_distance'    => $long_distance,
                 'note'             => $note_input ?: null,
             ) );
@@ -679,7 +689,7 @@ function mat_handle_clockout( $emp_master_id, $employee_code ) {
     if ( is_wp_error( $target ) ) wp_send_json_error( $target->get_error_message() );
 
     $row  = $target['row'];
-    $unit = ! empty( $row->time_unit ) ? (int) $row->time_unit : mat_get_time_unit();
+    $units = mat_get_row_rounding_units( $row );
 
     // ---- 休憩の確定 ----
     $break_master_id = intval( $_POST['break_master_id'] ?? 0 );
@@ -698,9 +708,9 @@ function mat_handle_clockout( $emp_master_id, $employee_code ) {
 
     // ---- 打刻の確定 ----
     $clock_out     = mat_minutes_to_time_sql( $target['clock_out_min'] );
-    $rounded_out   = mat_minutes_to_time_sql( mat_round_out_minutes( $target['clock_out_min'], $unit ) );
+    $rounded_out   = mat_minutes_to_time_sql( mat_round_out_minutes( $target['clock_out_min'], $units['out'] ) );
     $rounded_in    = $row->rounded_clock_in
-        ?: mat_minutes_to_time_sql( mat_round_in_minutes( mat_parse_time_to_minutes( $row->clock_in ), $unit ) );
+        ?: mat_minutes_to_time_sql( mat_round_in_minutes( mat_parse_time_to_minutes( $row->clock_in ), $units['in'] ) );
 
     // ---- 深夜休憩の確定（要件定義書 §6.7）----
     // midnight_span_minutes は該当があれば常にスナップショット保存する。
@@ -737,7 +747,9 @@ function mat_handle_clockout( $emp_master_id, $employee_code ) {
         'is_overnight'            => $target['is_overnight'] ? 1 : 0,
         'break_minutes'           => $break_minutes,
         'break_master_id'         => $break_master ? (int) $break_master->id : $row->break_master_id,
-        'time_unit'               => $unit,
+        'time_unit'               => $units['in'],
+        'clock_in_unit'           => $units['in'],
+        'clock_out_unit'          => $units['out'],
         'midnight_span_minutes'   => $midnight_span,
         'midnight_break_minutes'  => $midnight_break_minutes,
         'midnight_minutes'        => $midnight_minutes,

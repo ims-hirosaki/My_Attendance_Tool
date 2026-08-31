@@ -45,6 +45,8 @@ function mat_shortcode_render() {
         'breakSteps'           => $break_steps,
         'breakDefaultIndex'    => $default_index,
         'timeUnit'             => mat_get_time_unit(),
+        'clockInUnit'          => mat_get_clock_in_unit(),
+        'clockOutUnit'         => mat_get_clock_out_unit(),
     ) );
 
     ob_start();

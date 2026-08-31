@@ -180,8 +180,8 @@ function mat_csv_preview_handler() {
             $messages[] = '退勤時刻が出勤時刻以前になっています';
             if ( $status === 'ok' ) $status = 'warn';
         }
-        if ( $clock_in === '' && $clock_out === '' && $paid_leave_date === '' ) {
-            $messages[] = '出退勤・有給希望日がすべて空です';
+        if ( $clock_in === '' && $clock_out === '' && $break_time === '' && $paid_leave_date === '' ) {
+            $messages[] = '出退勤・休憩時間・有給希望日がすべて空です';
             if ( $status === 'ok' ) $status = 'warn';
         }
         if ( $paid_leave_date !== '' && ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $paid_leave_date ) ) {
@@ -407,7 +407,7 @@ function mat_csv_import_page_render() {
                     <tr><td>備考</td><td>自由記述／空欄可</td><td>—</td></tr>
                 </tbody>
             </table>
-            <p class="mat-csv-note">⚠️ 休日・公休日は行ごと省略してください（出勤記録のある日のみ行を作成）。</p>
+            <p class="mat-csv-note">⚠️ 休日・公休日は行ごと省略してください（出退勤、休憩時間、または有給希望日のいずれかがある日のみ行を作成）。</p>
         </div>
 
         <!-- ============ ファイル選択・設定 ============ -->

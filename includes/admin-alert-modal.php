@@ -87,10 +87,12 @@ function mat_build_alert_modal_payload( $row ) {
 	}
 
 	// 深夜該当時間・拘束時間はクライアント側で出勤・退勤からライブ再計算するため、丸め単位のみ渡す
-	$unit = ! empty( $row->time_unit ) ? (int) $row->time_unit : mat_get_time_unit();
+	$units = mat_get_row_rounding_units( $row );
 
 	return array(
-		'time_unit'       => $unit,
+		'time_unit'       => $units['in'],
+		'clock_in_unit'   => $units['in'],
+		'clock_out_unit'  => $units['out'],
 		'daily_id'        => (int) $row->id,
 		'employee_code'   => $row->employee_code,
 		'employee_name'   => $emp ? $emp->name : '',
@@ -151,9 +153,9 @@ function mat_admin_save_alert_fix_handler() {
 	}
 	$break_minutes = $break_in === '' ? 0 : (int) $break_in;
 
-	$unit = ! empty( $row->time_unit ) ? (int) $row->time_unit : mat_get_time_unit();
-	$rounded_in_preview  = $in_min  !== null ? mat_minutes_to_time_sql( mat_round_in_minutes( $in_min, $unit ) )  : null;
-	$rounded_out_preview = $out_min !== null ? mat_minutes_to_time_sql( mat_round_out_minutes( $out_min, $unit ) ) : null;
+	$units = mat_get_row_rounding_units( $row );
+	$rounded_in_preview  = $in_min  !== null ? mat_minutes_to_time_sql( mat_round_in_minutes( $in_min, $units['in'] ) )  : null;
+	$rounded_out_preview = $out_min !== null ? mat_minutes_to_time_sql( mat_round_out_minutes( $out_min, $units['out'] ) ) : null;
 
 	// ---- 中抜け（要件定義書 §12.4） ----
 	$break_out_enabled = ( ( $_POST['break_out_enabled'] ?? '0' ) === '1' );
@@ -432,7 +434,8 @@ function mat_render_alert_modal() {
 		var alertNonce = '<?php echo esc_js( wp_create_nonce( 'mat_alert_nonce' ) ); ?>';
 		var deleteNonce = '<?php echo esc_js( wp_create_nonce( 'mat_admin_nonce' ) ); ?>';
 		var currentDailyId = 0;
-		var currentTimeUnit = 30;
+		var currentClockInUnit = 30;
+		var currentClockOutUnit = 30;
 		var reviewOptions = <?php echo wp_json_encode( MAT_REVIEW_LABELS ); ?>;
 		var approvalOptions = <?php echo wp_json_encode( MAT_APPROVAL_LABELS ); ?>;
 
@@ -500,8 +503,8 @@ function mat_render_alert_modal() {
 				return;
 			}
 
-			var roundedIn  = Math.ceil(inMin / currentTimeUnit) * currentTimeUnit;
-			var roundedOut = Math.floor(outMin / currentTimeUnit) * currentTimeUnit;
+			var roundedIn  = currentClockInUnit === 0 ? inMin : Math.ceil(inMin / currentClockInUnit) * currentClockInUnit;
+			var roundedOut = currentClockOutUnit === 0 ? outMin : Math.floor(outMin / currentClockOutUnit) * currentClockOutUnit;
 			if (roundedOut <= roundedIn) roundedOut += 1440;
 
 			var boEnabled  = $('#mat-alert-break-out-enabled').is(':checked');
@@ -589,7 +592,8 @@ function mat_render_alert_modal() {
 
 		function fillModal(d) {
 			currentDailyId = d.daily_id;
-			currentTimeUnit = d.time_unit || 30;
+			currentClockInUnit = (d.clock_in_unit === 0 || d.clock_in_unit) ? parseInt(d.clock_in_unit, 10) : 30;
+			currentClockOutUnit = (d.clock_out_unit === 0 || d.clock_out_unit) ? parseInt(d.clock_out_unit, 10) : 30;
 			$('#mat-alert-meta').text('[' + d.employee_code + '] ' + d.employee_name + ' ／ ' + d.date_label);
 			$('#mat-alert-in').val(d.clock_in);
 			$('#mat-alert-out').val(d.clock_out);

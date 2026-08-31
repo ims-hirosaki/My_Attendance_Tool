@@ -20,6 +20,25 @@ function mat_register_settings_page() {
  * 設定の保存処理
  */
 add_action( 'admin_post_mat_save_settings', 'mat_save_settings_handler' );
+
+/** 指定期間の実打刻から、現在選択した始業・終業の丸め値を一括再計算する。 */
+function mat_bulk_apply_rounding_units( $start, $end, $in_unit, $out_unit ) {
+    global $wpdb;
+    $ids = $wpdb->get_col( $wpdb->prepare(
+        "SELECT id FROM " . MAT_DAILY_TABLE . "
+         WHERE work_date BETWEEN %s AND %s AND is_holiday = 0
+           AND (clock_in IS NOT NULL OR clock_out IS NOT NULL)
+         ORDER BY work_date, id",
+        $start, $end
+    ) );
+
+    $updated = 0;
+    foreach ( $ids as $id ) {
+        if ( mat_recalc_daily_row( (int) $id, $in_unit, $out_unit ) ) $updated++;
+    }
+    return $updated;
+}
+
 function mat_save_settings_handler() {
     if ( ! current_user_can( 'manage_custom_plugin_settings' ) ) {
         wp_die( '権限がありません。' );
@@ -36,10 +55,15 @@ function mat_save_settings_handler() {
     update_option( 'mat_show_midnight_message',      isset( $_POST['mat_show_midnight_message'] )      ? 1 : 0 );
     update_option( 'mat_closing_day',               intval( $_POST['mat_closing_day'] ?? 0 ) );
 
-    // 勤務時間入力単位（15 / 30 / 60分のみ許可）
-    $time_unit = intval( $_POST['mat_time_unit'] ?? 30 );
-    if ( ! in_array( $time_unit, array( 15, 30, 60 ), true ) ) $time_unit = 30;
-    update_option( 'mat_time_unit', $time_unit );
+    // 始業・終業の丸め込み単位（0＝丸め込みなし）
+    $allowed_units  = array( 0, 15, 30, 60 );
+    $clock_in_unit  = intval( $_POST['mat_clock_in_unit']  ?? 30 );
+    $clock_out_unit = intval( $_POST['mat_clock_out_unit'] ?? 30 );
+    if ( ! in_array( $clock_in_unit, $allowed_units, true ) )   $clock_in_unit = 30;
+    if ( ! in_array( $clock_out_unit, $allowed_units, true ) ) $clock_out_unit = 30;
+    update_option( 'mat_clock_in_unit', $clock_in_unit );
+    update_option( 'mat_clock_out_unit', $clock_out_unit );
+    update_option( 'mat_time_unit', $clock_in_unit ); // 旧連携向け互換値
 
     // 例外休憩アラートの基準
     $alert_mode = ( $_POST['mat_break_alert_mode'] ?? 'auto' ) === 'fixed' ? 'fixed' : 'auto';
@@ -75,10 +99,34 @@ function mat_save_settings_handler() {
         update_option( 'mat_midnight_alert_since', $midnight_alert_since );
     }
 
+    // 過去データへの適用範囲。実打刻は変更せず、丸め値と関連する深夜値のみ再計算する。
+    $rounding_scope = sanitize_text_field( $_POST['mat_rounding_apply_scope'] ?? 'future' );
+    $rounding_error = '';
+    $rounding_result = '';
+    if ( $rounding_scope !== 'future' ) {
+        if ( $rounding_scope === 'month' ) {
+            $range_start = current_time( 'Y-m-01' );
+            $range_end   = current_time( 'Y-m-d' );
+        } else {
+            $range_start = sanitize_text_field( $_POST['mat_rounding_start'] ?? '' );
+            $range_end   = sanitize_text_field( $_POST['mat_rounding_end'] ?? '' );
+        }
+        if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $range_start ?? '' )
+            || ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $range_end ?? '' )
+            || $range_start > $range_end ) {
+            $rounding_error = '丸め込みを適用する期間が正しくありません。';
+        } else {
+            $count = mat_bulk_apply_rounding_units( $range_start, $range_end, $clock_in_unit, $clock_out_unit );
+            $rounding_result = sprintf( '%s〜%sの%d件を再計算しました。', $range_start, $range_end, $count );
+        }
+    }
+
     $redirect_url = admin_url( 'admin.php?page=mat-settings&saved=1' );
     if ( $midnight_error !== '' ) {
         $redirect_url .= '&mat_midnight_error=' . urlencode( $midnight_error );
     }
+    if ( $rounding_error !== '' ) $redirect_url .= '&mat_rounding_error=' . urlencode( $rounding_error );
+    if ( $rounding_result !== '' ) $redirect_url .= '&mat_rounding_result=' . urlencode( $rounding_result );
     wp_redirect( $redirect_url );
     exit;
 }
@@ -169,7 +217,8 @@ function mat_settings_page_render() {
     $show_overtime_msg    = mat_clockout_message_enabled( 'overtime' );
     $show_midnight_msg    = mat_clockout_message_enabled( 'midnight' );
     $closing_day     = (int)  get_option( 'mat_closing_day', 0 );
-    $time_unit            = mat_get_time_unit();
+    $clock_in_unit        = mat_get_clock_in_unit();
+    $clock_out_unit       = mat_get_clock_out_unit();
     $break_alert_mode     = mat_get_break_alert_mode();
     $overtime_threshold   = mat_get_overtime_threshold();
     $midnight_window      = mat_get_midnight_window();
@@ -195,8 +244,14 @@ function mat_settings_page_render() {
                 <p>深夜時間帯の設定は保存されませんでした：<?php echo esc_html( urldecode( $_GET['mat_midnight_error'] ) ); ?></p>
             </div>
         <?php endif; ?>
+        <?php if ( isset( $_GET['mat_rounding_result'] ) ) : ?>
+            <div class="notice notice-success is-dismissible"><p><?php echo esc_html( urldecode( $_GET['mat_rounding_result'] ) ); ?></p></div>
+        <?php endif; ?>
+        <?php if ( isset( $_GET['mat_rounding_error'] ) ) : ?>
+            <div class="notice notice-error is-dismissible"><p><?php echo esc_html( urldecode( $_GET['mat_rounding_error'] ) ); ?></p></div>
+        <?php endif; ?>
 
-        <form method="post" action="<?php echo admin_url( 'admin-post.php' ); ?>">
+        <form method="post" action="<?php echo admin_url( 'admin-post.php' ); ?>" id="mat-settings-form">
             <?php wp_nonce_field( 'mat_save_settings' ); ?>
             <input type="hidden" name="action" value="mat_save_settings">
 
@@ -297,23 +352,41 @@ function mat_settings_page_render() {
                     </td>
                 </tr>
 
-                <!-- 勤務時間入力単位 -->
+                <!-- 始業・終業の丸め込み -->
                 <tr>
-                    <th scope="row">勤務時間入力単位</th>
+                    <th scope="row">勤務時間の丸め込み</th>
                     <td>
-                        <select name="mat_time_unit">
-                            <?php foreach ( array( 15, 30, 60 ) as $unit ) : ?>
-                                <option value="<?php echo esc_attr( $unit ); ?>" <?php selected( $time_unit, $unit ); ?>>
-                                    <?php echo esc_html( $unit ); ?>分
+                        <label>始業
+                        <select name="mat_clock_in_unit">
+                            <?php foreach ( array( 0, 15, 30, 60 ) as $unit ) : ?>
+                                <option value="<?php echo esc_attr( $unit ); ?>" <?php selected( $clock_in_unit, $unit ); ?>>
+                                    <?php echo $unit === 0 ? '丸め込みなし' : esc_html( $unit ) . '分'; ?>
                                 </option>
                             <?php endforeach; ?>
-                        </select>
+                        </select></label>
+                        <label style="margin-left:16px;">終業
+                        <select name="mat_clock_out_unit">
+                            <?php foreach ( array( 0, 15, 30, 60 ) as $unit ) : ?>
+                                <option value="<?php echo esc_attr( $unit ); ?>" <?php selected( $clock_out_unit, $unit ); ?>>
+                                    <?php echo $unit === 0 ? '丸め込みなし' : esc_html( $unit ) . '分'; ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select></label>
                         <p class="description">
-                            出勤・退勤の打刻時刻を丸め込む単位です。<br>
-                            <strong>出勤は繰り上げ（遅い方）、退勤は切り捨て（早い方）</strong>に丸め込まれます。<br>
-                            例）30分単位のとき　出勤 8:25 → 始業 8:30 ／ 出勤 8:31 → 始業 9:00 ／ 退勤 17:55 → 終業 17:30<br>
-                            実打刻（clock_in / clock_out）は改変されず、丸め込み後の値は「始業 / 終業」として別に保持されます。
+                            始業は繰り上げ、終業は切り捨てです。「丸め込みなし」では実打刻と同じ時刻になります。<br>
+                            実打刻（clock_in / clock_out）は変更されません。
                         </p>
+
+                        <fieldset style="margin-top:12px; padding:10px 12px; border:1px solid #c3c4c7; max-width:620px;">
+                            <legend><strong>新しい設定の適用範囲</strong></legend>
+                            <label style="display:block;"><input type="radio" name="mat_rounding_apply_scope" value="future" checked> 今後の打刻だけに適用</label>
+                            <label style="display:block; margin-top:6px;"><input type="radio" name="mat_rounding_apply_scope" value="month"> 今月1日から本日までの既存データにも適用</label>
+                            <label style="display:block; margin-top:6px;"><input type="radio" name="mat_rounding_apply_scope" value="custom"> 期間を指定して既存データにも適用</label>
+                            <div style="margin:6px 0 0 24px;">
+                                <input type="date" name="mat_rounding_start"> 〜 <input type="date" name="mat_rounding_end">
+                            </div>
+                            <p class="description">既存データへ適用すると、実打刻から始業・終業および深夜関連時間を再計算します。</p>
+                        </fieldset>
                     </td>
                 </tr>
 
@@ -419,6 +492,16 @@ function mat_settings_page_render() {
         <?php mat_render_break_master_section(); ?>
 
         <?php mat_render_midnight_recalc_section(); ?>
+        <script>
+        jQuery(function($) {
+            $('#mat-settings-form').on('submit', function(e) {
+                var scope = $('input[name="mat_rounding_apply_scope"]:checked').val();
+                if (scope !== 'future' && !window.confirm('指定した既存データの始業・終業を、実打刻から再計算します。続行しますか？')) {
+                    e.preventDefault();
+                }
+            });
+        });
+        </script>
     </div>
     <?php
 }
