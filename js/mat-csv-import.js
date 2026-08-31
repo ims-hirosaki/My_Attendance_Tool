@@ -345,7 +345,7 @@ jQuery(document).ready(function ($) {
 
         var hasError = result.errors.length > 0;
         var html = '<div class="mat-result-summary">'
-            + '<p>🎉 インポートが完了しました。</p>'
+            + '<p>' + (hasError ? '⚠️ インポート処理が完了しました（エラーあり）。' : '🎉 インポートが完了しました。') + '</p>'
             + '<table class="mat-result-table">'
             + '<tr><th>新規追加</th><td><strong>' + result.inserted + '</strong> 件</td></tr>'
             + '<tr><th>上書き更新</th><td><strong>' + result.updated + '</strong> 件</td></tr>'

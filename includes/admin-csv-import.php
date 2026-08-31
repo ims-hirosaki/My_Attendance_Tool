@@ -118,7 +118,7 @@ function mat_csv_preview_handler() {
 
     // 既存レコードの日付を一括取得（重複チェック用）
     $existing_raw = $wpdb->get_results(
-        "SELECT employee_code, DATE(timestamp) AS work_date FROM " . MAT_LOG_TABLE
+        "SELECT employee_code, work_date FROM " . MAT_DAILY_TABLE
     );
     $existing_set = array();
     foreach ( $existing_raw as $ex ) {
@@ -237,35 +237,6 @@ function mat_csv_preview_handler() {
 //  AJAX: CSVインポート（チャンク処理）
 // =========================================================
 
-/**
- * CSVで値が指定された項目だけを既存の item_name に反映する。
- * CSVの空欄は既存値を維持するため、休憩だけの追加にも使用できる。
- */
-function mat_csv_merge_item_name( $existing_item_name, $updates ) {
-    $parts = preg_split( '/\s*\|\s*/', trim( (string) $existing_item_name ), -1, PREG_SPLIT_NO_EMPTY );
-
-    foreach ( $updates as $label => $value ) {
-        if ( $value === '' ) continue;
-
-        $replacement = "{$label}: {$value}";
-        $replaced    = false;
-
-        foreach ( $parts as $index => $part ) {
-            if ( preg_match( '/^' . preg_quote( $label, '/' ) . '\s*:/u', trim( $part ) ) ) {
-                $parts[ $index ] = $replacement;
-                $replaced = true;
-                break;
-            }
-        }
-
-        if ( ! $replaced ) {
-            $parts[] = $replacement;
-        }
-    }
-
-    return implode( ' | ', $parts );
-}
-
 add_action( 'wp_ajax_mat_csv_import_chunk', 'mat_csv_import_chunk_handler' );
 function mat_csv_import_chunk_handler() {
     if ( ! current_user_can( 'edit_custom_plugins' ) ) wp_send_json_error( '権限がありません。' );
@@ -328,25 +299,45 @@ function mat_csv_import_chunk_handler() {
         }
         $emp = $emp_map[ $employee_code ];
 
-        // item_name を組み立てる
-        $parts = array();
-        if ( $clock_in  !== '' ) $parts[] = "出勤: {$clock_in}";
-        if ( $clock_out !== '' ) $parts[] = "退勤: {$clock_out}";
-        $break_val = ( $break_time !== '' ) ? $break_time : '00:00';
-        $parts[] = "休憩: {$break_val}";
-        if ( $note !== '' )      $parts[] = "備考: {$note}";
-        $item_name = implode( ' | ', $parts );
+        $has_attendance_data = $clock_in !== '' || $clock_out !== '' || $break_time !== '' || $note !== '';
 
-        // timestamp = 勤務日 + 出勤時刻（出勤がなければ 00:00:00）
-        $ts_time  = ( $clock_in !== '' ) ? $clock_in . ':00' : '00:00:00';
-        $timestamp = $work_date . ' ' . $ts_time;
+        // 有給希望日は paid-leave-manager へ登録する。
+        if ( $paid_leave_date !== '' ) {
+            if ( ! class_exists( 'PL_Request' ) ) {
+                $result['errors'][] = "{$line_no}行目：有給管理システムが稼働していません";
+                if ( ! $has_attendance_data ) {
+                    $result['skipped']++;
+                    continue;
+                }
+            } else {
+                $paid_leave_result = PL_Request::create( $employee_code, $paid_leave_date, 'CSVインポート' );
+                if ( is_wp_error( $paid_leave_result ) ) {
+                    $result['errors'][] = "{$line_no}行目：有給希望日の登録失敗 - " . $paid_leave_result->get_error_message();
+                    if ( ! $has_attendance_data ) {
+                        $result['skipped']++;
+                        continue;
+                    }
+                }
+            }
+        }
 
-        // 重複確認
+        // 有給希望日のみの行は勤怠日次テーブルには作成しない。
+        if ( ! $has_attendance_data ) {
+            $result['inserted']++;
+            continue;
+        }
+
+        $clock_in_sql    = $clock_in !== '' ? mat_minutes_to_time_sql( mat_parse_time_to_minutes( $clock_in ) ) : null;
+        $clock_out_sql   = $clock_out !== '' ? mat_minutes_to_time_sql( mat_parse_time_to_minutes( $clock_out ) ) : null;
+        $break_minutes   = $break_time !== '' ? mat_parse_time_to_minutes( $break_time ) : null;
+        $clock_in_unit   = mat_get_clock_in_unit();
+        $clock_out_unit  = mat_get_clock_out_unit();
+
+        // 現行の勤怠日次テーブルで重複確認する。
         $existing = $wpdb->get_row( $wpdb->prepare(
-            "SELECT id, item_name, timestamp, paid_leave_date FROM " . MAT_LOG_TABLE
-            . " WHERE employee_code = %s AND DATE(timestamp) = %s"
-            . " LIMIT 1",
-            $employee_code,
+            "SELECT * FROM " . MAT_DAILY_TABLE
+            . " WHERE employee_id = %d AND work_date = %s LIMIT 1",
+            (int) $emp->id,
             $work_date
         ) );
 
@@ -358,34 +349,38 @@ function mat_csv_import_chunk_handler() {
 
             if ( $on_duplicate === 'merge' ) {
                 // CSVの空欄は既存値を維持し、入力済みの項目だけ更新する。
-                $merged_item_name = mat_csv_merge_item_name( $existing->item_name, array(
-                    '出勤' => $clock_in,
-                    '退勤' => $clock_out,
-                    '休憩' => $break_time,
-                    '備考' => $note,
-                ) );
-                $update_data = array(
-                    'item_name'            => $merged_item_name,
-                    'timestamp'            => $clock_in !== '' ? $timestamp : $existing->timestamp,
-                    'registered_user_name' => $emp->name,
-                    'paid_leave_date'      => $paid_leave_date !== '' ? $paid_leave_date : $existing->paid_leave_date,
-                );
+                $update_data = array( 'employee_code' => $employee_code );
+                if ( $clock_in !== '' ) {
+                    $update_data['clock_in']         = $clock_in_sql;
+                    $update_data['rounded_clock_in'] = mat_round_clock_in( $clock_in_sql, $clock_in_unit );
+                    $update_data['clock_in_unit']    = $clock_in_unit;
+                }
+                if ( $clock_out !== '' ) {
+                    $update_data['clock_out']         = $clock_out_sql;
+                    $update_data['rounded_clock_out'] = mat_round_clock_out( $clock_out_sql, $clock_out_unit );
+                    $update_data['clock_out_unit']    = $clock_out_unit;
+                }
+                if ( $break_time !== '' ) $update_data['break_minutes'] = $break_minutes;
+                if ( $note !== '' )       $update_data['note'] = $note;
             } else {
                 // 全項目を上書き（CSVの空欄は既存値を消去）。
                 $update_data = array(
-                    'item_name'            => $item_name,
-                    'timestamp'            => $timestamp,
-                    'registered_user_name' => $emp->name,
-                    'paid_leave_date'      => $paid_leave_date !== '' ? $paid_leave_date : null,
+                    'employee_code'    => $employee_code,
+                    'clock_in'         => $clock_in_sql,
+                    'clock_out'        => $clock_out_sql,
+                    'rounded_clock_in' => $clock_in_sql ? mat_round_clock_in( $clock_in_sql, $clock_in_unit ) : null,
+                    'rounded_clock_out'=> $clock_out_sql ? mat_round_clock_out( $clock_out_sql, $clock_out_unit ) : null,
+                    'break_minutes'    => $break_minutes,
+                    'note'             => $note !== '' ? $note : null,
+                    'clock_in_unit'    => $clock_in !== '' ? $clock_in_unit : null,
+                    'clock_out_unit'   => $clock_out !== '' ? $clock_out_unit : null,
                 );
             }
 
             $updated = $wpdb->update(
-                MAT_LOG_TABLE,
+                MAT_DAILY_TABLE,
                 $update_data,
-                array( 'id' => (int) $existing->id ),
-                array( '%s', '%s', '%s', '%s' ),
-                array( '%d' )
+                array( 'id' => (int) $existing->id )
             );
             if ( $updated === false ) {
                 $result['errors'][] = "{$line_no}行目：更新失敗 - " . $wpdb->last_error;
@@ -395,17 +390,21 @@ function mat_csv_import_chunk_handler() {
         } else {
             // 新規挿入
             $insert_data = array(
-                'item_name'            => $item_name,
-                'timestamp'            => $timestamp,
-                'registered_user_id'   => (int) $emp->id,
-                'registered_user_name' => $emp->name,
-                'employee_code'        => $employee_code,
-                'paid_leave_date'      => $paid_leave_date !== '' ? $paid_leave_date : null,
+                'employee_id'       => (int) $emp->id,
+                'employee_code'     => $employee_code,
+                'work_date'         => $work_date,
+                'clock_in'          => $clock_in_sql,
+                'clock_out'         => $clock_out_sql,
+                'rounded_clock_in'  => $clock_in_sql ? mat_round_clock_in( $clock_in_sql, $clock_in_unit ) : null,
+                'rounded_clock_out' => $clock_out_sql ? mat_round_clock_out( $clock_out_sql, $clock_out_unit ) : null,
+                'break_minutes'     => $break_minutes,
+                'note'              => $note !== '' ? $note : null,
+                'clock_in_unit'     => $clock_in !== '' ? $clock_in_unit : null,
+                'clock_out_unit'    => $clock_out !== '' ? $clock_out_unit : null,
             );
             $inserted = $wpdb->insert(
-                MAT_LOG_TABLE,
-                $insert_data,
-                array( '%s', '%s', '%d', '%s', '%s', '%s' )
+                MAT_DAILY_TABLE,
+                $insert_data
             );
             if ( $inserted === false ) {
                 $result['errors'][] = "{$line_no}行目：挿入失敗 - " . $wpdb->last_error;
