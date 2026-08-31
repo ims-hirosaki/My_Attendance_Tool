@@ -30,6 +30,10 @@ function mat_save_settings_handler() {
     update_option( 'mat_use_paid_leave_approval',   isset( $_POST['mat_use_paid_leave_approval'] )   ? 1 : 0 );
     update_option( 'mat_show_paid_leave_request',   isset( $_POST['mat_show_paid_leave_request'] )   ? 1 : 0 );
     update_option( 'mat_allow_log_edit',             isset( $_POST['mat_allow_log_edit'] )             ? 1 : 0 );
+    update_option( 'mat_show_overnight_message',     isset( $_POST['mat_show_overnight_message'] )     ? 1 : 0 );
+    update_option( 'mat_show_break_message',         isset( $_POST['mat_show_break_message'] )         ? 1 : 0 );
+    update_option( 'mat_show_overtime_message',      isset( $_POST['mat_show_overtime_message'] )      ? 1 : 0 );
+    update_option( 'mat_show_midnight_message',      isset( $_POST['mat_show_midnight_message'] )      ? 1 : 0 );
     update_option( 'mat_closing_day',               intval( $_POST['mat_closing_day'] ?? 0 ) );
 
     // 勤務時間入力単位（15 / 30 / 60分のみ許可）
@@ -160,6 +164,10 @@ function mat_settings_page_render() {
     $use_approval         = (bool) get_option( 'mat_use_paid_leave_approval', 1 );
     $show_paid_leave_req  = (bool) get_option( 'mat_show_paid_leave_request', 1 );
     $allow_log_edit       = (bool) get_option( 'mat_allow_log_edit', 0 );
+    $show_overnight_msg   = mat_clockout_message_enabled( 'overnight' );
+    $show_break_msg       = mat_clockout_message_enabled( 'break' );
+    $show_overtime_msg    = mat_clockout_message_enabled( 'overtime' );
+    $show_midnight_msg    = mat_clockout_message_enabled( 'midnight' );
     $closing_day     = (int)  get_option( 'mat_closing_day', 0 );
     $time_unit            = mat_get_time_unit();
     $break_alert_mode     = mat_get_break_alert_mode();
@@ -305,6 +313,37 @@ function mat_settings_page_render() {
                             <strong>出勤は繰り上げ（遅い方）、退勤は切り捨て（早い方）</strong>に丸め込まれます。<br>
                             例）30分単位のとき　出勤 8:25 → 始業 8:30 ／ 出勤 8:31 → 始業 9:00 ／ 退勤 17:55 → 終業 17:30<br>
                             実打刻（clock_in / clock_out）は改変されず、丸め込み後の値は「始業 / 終業」として別に保持されます。
+                        </p>
+                    </td>
+                </tr>
+
+                <!-- 退勤打刻時の確認メッセージ -->
+                <tr>
+                    <th scope="row">退勤打刻時の確認メッセージ</th>
+                    <td>
+                        <label style="display:block; margin-bottom:6px;">
+                            <input type="checkbox" name="mat_show_overnight_message" value="1"
+                                <?php checked( $show_overnight_msg ); ?>>
+                            日跨ぎ確認（前日の退勤打刻が未完了）
+                        </label>
+                        <label style="display:block; margin-bottom:6px;">
+                            <input type="checkbox" name="mat_show_break_message" value="1"
+                                <?php checked( $show_break_msg ); ?>>
+                            例外休憩確認（休憩時間がイレギュラー）
+                        </label>
+                        <label style="display:block; margin-bottom:6px;">
+                            <input type="checkbox" name="mat_show_overtime_message" value="1"
+                                <?php checked( $show_overtime_msg ); ?>>
+                            残業確認（残業時間が発生）
+                        </label>
+                        <label style="display:block;">
+                            <input type="checkbox" name="mat_show_midnight_message" value="1"
+                                <?php checked( $show_midnight_msg ); ?>>
+                            深夜休憩確認（深夜時間帯の勤務）
+                        </label>
+                        <p class="description">
+                            チェックを外したメッセージは退勤打刻時に表示されません。<br>
+                            オフにしても、勤務時間・残業時間の計算、打刻の保存、管理画面のアラート一覧には影響しません。
                         </p>
                     </td>
                 </tr>
