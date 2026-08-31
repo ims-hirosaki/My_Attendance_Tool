@@ -48,6 +48,23 @@ function mat_get_break_alert_mode() {
 	return get_option( 'mat_break_alert_mode', 'auto' ) === 'fixed' ? 'fixed' : 'auto';
 }
 
+/**
+ * 退勤打刻時の確認メッセージを表示するか。
+ *
+ * @param string $type overnight / break / overtime / midnight
+ */
+function mat_clockout_message_enabled( $type ) {
+	$option_keys = array(
+		'overnight' => 'mat_show_overnight_message',
+		'break'     => 'mat_show_break_message',
+		'overtime'  => 'mat_show_overtime_message',
+		'midnight'  => 'mat_show_midnight_message',
+	);
+
+	if ( ! isset( $option_keys[ $type ] ) ) return true;
+	return (bool) get_option( $option_keys[ $type ], 1 );
+}
+
 // =========================================================
 //  2. 時刻ヘルパー（24時間超対応）
 // =========================================================

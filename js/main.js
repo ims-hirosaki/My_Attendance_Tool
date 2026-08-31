@@ -535,7 +535,8 @@ jQuery(document).ready(function ($) {
             if (!reason) { setError('mat-ot-error', '申請理由を入力してください。'); return; }
             clockout.overtimeReason = reason;
             $('#mat-overtime-modal').fadeOut(150);
-            submitClockout();
+            // 残業回答済みとして再判定し、続く深夜休憩確認へ進む
+            prepareClockout();
             return;
         }
 
