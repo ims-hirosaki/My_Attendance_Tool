@@ -192,7 +192,7 @@ function mat_csv_preview_handler() {
         // --- 重複チェック ---
         $dup_key = $employee_code . '_' . $work_date;
         if ( $status !== 'error' && isset( $existing_set[ $dup_key ] ) ) {
-            $messages[] = 'この日付のレコードが既に存在します';
+            $messages[] = 'この日付のレコードが既に存在します（「入力項目だけ更新」で休憩のみ追加可）';
             if ( $status === 'ok' ) $status = 'duplicate';
         }
 
@@ -237,6 +237,35 @@ function mat_csv_preview_handler() {
 //  AJAX: CSVインポート（チャンク処理）
 // =========================================================
 
+/**
+ * CSVで値が指定された項目だけを既存の item_name に反映する。
+ * CSVの空欄は既存値を維持するため、休憩だけの追加にも使用できる。
+ */
+function mat_csv_merge_item_name( $existing_item_name, $updates ) {
+    $parts = preg_split( '/\s*\|\s*/', trim( (string) $existing_item_name ), -1, PREG_SPLIT_NO_EMPTY );
+
+    foreach ( $updates as $label => $value ) {
+        if ( $value === '' ) continue;
+
+        $replacement = "{$label}: {$value}";
+        $replaced    = false;
+
+        foreach ( $parts as $index => $part ) {
+            if ( preg_match( '/^' . preg_quote( $label, '/' ) . '\s*:/u', trim( $part ) ) ) {
+                $parts[ $index ] = $replacement;
+                $replaced = true;
+                break;
+            }
+        }
+
+        if ( ! $replaced ) {
+            $parts[] = $replacement;
+        }
+    }
+
+    return implode( ' | ', $parts );
+}
+
 add_action( 'wp_ajax_mat_csv_import_chunk', 'mat_csv_import_chunk_handler' );
 function mat_csv_import_chunk_handler() {
     if ( ! current_user_can( 'edit_custom_plugins' ) ) wp_send_json_error( '権限がありません。' );
@@ -246,8 +275,12 @@ function mat_csv_import_chunk_handler() {
     @ini_set( 'max_execution_time', 300 );
 
     $rows_json     = isset( $_POST['rows'] )            ? wp_unslash( $_POST['rows'] ) : '[]';
-    $on_duplicate  = isset( $_POST['on_duplicate'] )    ? sanitize_text_field( $_POST['on_duplicate'] ) : 'skip';
+    $on_duplicate  = isset( $_POST['on_duplicate'] )    ? sanitize_text_field( $_POST['on_duplicate'] ) : 'merge';
     $rows          = json_decode( $rows_json, true );
+
+    if ( ! in_array( $on_duplicate, array( 'merge', 'skip', 'overwrite' ), true ) ) {
+        $on_duplicate = 'merge';
+    }
 
     if ( ! is_array( $rows ) || empty( $rows ) ) {
         wp_send_json_error( 'データが空です。' );
@@ -309,30 +342,48 @@ function mat_csv_import_chunk_handler() {
         $timestamp = $work_date . ' ' . $ts_time;
 
         // 重複確認
-        $existing_id = $wpdb->get_var( $wpdb->prepare(
-            "SELECT id FROM " . MAT_LOG_TABLE
+        $existing = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id, item_name, timestamp, paid_leave_date FROM " . MAT_LOG_TABLE
             . " WHERE employee_code = %s AND DATE(timestamp) = %s"
             . " LIMIT 1",
             $employee_code,
             $work_date
         ) );
 
-        if ( $existing_id ) {
+        if ( $existing ) {
             if ( $on_duplicate === 'skip' ) {
                 $result['skipped']++;
                 continue;
             }
-            // 上書き（update）
-            $update_data = array(
-                'item_name'            => $item_name,
-                'timestamp'            => $timestamp,
-                'registered_user_name' => $emp->name,
-                'paid_leave_date'      => $paid_leave_date !== '' ? $paid_leave_date : null,
-            );
+
+            if ( $on_duplicate === 'merge' ) {
+                // CSVの空欄は既存値を維持し、入力済みの項目だけ更新する。
+                $merged_item_name = mat_csv_merge_item_name( $existing->item_name, array(
+                    '出勤' => $clock_in,
+                    '退勤' => $clock_out,
+                    '休憩' => $break_time,
+                    '備考' => $note,
+                ) );
+                $update_data = array(
+                    'item_name'            => $merged_item_name,
+                    'timestamp'            => $clock_in !== '' ? $timestamp : $existing->timestamp,
+                    'registered_user_name' => $emp->name,
+                    'paid_leave_date'      => $paid_leave_date !== '' ? $paid_leave_date : $existing->paid_leave_date,
+                );
+            } else {
+                // 全項目を上書き（CSVの空欄は既存値を消去）。
+                $update_data = array(
+                    'item_name'            => $item_name,
+                    'timestamp'            => $timestamp,
+                    'registered_user_name' => $emp->name,
+                    'paid_leave_date'      => $paid_leave_date !== '' ? $paid_leave_date : null,
+                );
+            }
+
             $updated = $wpdb->update(
                 MAT_LOG_TABLE,
                 $update_data,
-                array( 'id' => (int) $existing_id ),
+                array( 'id' => (int) $existing->id ),
                 array( '%s', '%s', '%s', '%s' ),
                 array( '%d' )
             );
@@ -421,11 +472,15 @@ function mat_csv_import_page_render() {
                 <div>
                     <label class="mat-csv-label">重複レコードの扱い</label>
                     <label class="mat-radio-label">
-                        <input type="radio" name="mat_on_duplicate" value="skip" checked> スキップ（既存を維持）
+                        <input type="radio" name="mat_on_duplicate" value="merge" checked> 入力項目だけ更新（空欄は既存を維持）
                     </label>
                     <label class="mat-radio-label">
-                        <input type="radio" name="mat_on_duplicate" value="overwrite"> 上書き
+                        <input type="radio" name="mat_on_duplicate" value="skip"> スキップ（既存を維持）
                     </label>
+                    <label class="mat-radio-label">
+                        <input type="radio" name="mat_on_duplicate" value="overwrite"> 全項目を上書き（空欄は消去）
+                    </label>
+                    <p class="description">休憩だけを追加する場合は、「入力項目だけ更新」を選択してください。</p>
                 </div>
             </div>
             <button id="mat-csv-preview-btn" class="button button-primary" disabled>
