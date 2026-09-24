@@ -140,7 +140,7 @@ function mat_alert_list_page_render() {
 	<div class="wrap">
 		<h1>⚠ アラート一覧</h1>
 		<p style="color:#666; max-width:820px;">
-			基準外の休憩・残業が発生した打刻を一覧します。アラートは保存されず、休憩マスタと設定に基づいて表示のたびに判定されます。
+			8時以外の出勤・基準外の休憩・残業・深夜勤務の打刻を一覧します。アラートは保存されず、休憩マスタと設定に基づいて表示のたびに判定されます。
 		</p>
 
 		<div class="card" style="max-width:100%; margin-top:16px; padding:15px;">
@@ -185,6 +185,7 @@ function mat_alert_list_page_render() {
 						アラート種別：
 						<?php
 						$alert_type_options = array(
+							'clockin_exception' => '例外出勤',
 							'break_exception' => '例外休憩',
 							'overtime'         => '残業',
 							'midnight_break'   => '深夜休憩',
@@ -274,7 +275,7 @@ function mat_alert_list_read_filters( $source = null ) {
 	$status = ( ( $src['status'] ?? 'unresolved' ) === 'all' ) ? 'all' : 'unresolved';
 
 	// アラート種別フィルタ（要件定義書 §7.5）：全てOFFの場合は job_types と同様、全種別を対象にする
-	$valid_alert_types = array( 'break_exception', 'overtime', 'midnight_break' );
+	$valid_alert_types = array( 'break_exception', 'overtime', 'midnight_break', 'clockin_exception' );
 	$alert_types = isset( $src['alert_types'] )
 		? array_values( array_intersect( (array) $src['alert_types'], $valid_alert_types ) )
 		: array();

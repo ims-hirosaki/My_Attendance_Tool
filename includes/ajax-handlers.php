@@ -502,6 +502,13 @@ function mat_prepare_clockout_handler() {
     $rounded_in_time  = mat_minutes_to_time_sql( $rounded_in_min );
     $rounded_out_time = mat_minutes_to_time_sql( $rounded_out_min );
 
+    $job_break = mat_resolve_job_break( $emp, $row, $rounded_in_time, $rounded_out_time, $_POST['job_break_minutes'] ?? null );
+    if ( is_wp_error( $job_break ) ) wp_send_json_error( $job_break->get_error_message() );
+    if ( $job_break !== null ) {
+        $break_minutes = $job_break['minutes'];
+        $break_master = null;
+    }
+
     $calc     = mat_calc_work_minutes( $rounded_in_time, $rounded_out_time, $break_minutes, $row->break_out_start ?? null, $row->break_out_end ?? null );
     $standard_row     = mat_get_break_alert_mode() === 'auto'
         ? ( mat_get_auto_break_master( $calc['kousoku'] ) ?: mat_get_default_break_master() )
@@ -528,6 +535,10 @@ function mat_prepare_clockout_handler() {
         'rounded_in'           => mat_minutes_to_hm( $rounded_in_min ),
         'rounded_out'          => mat_minutes_to_hm( $rounded_out_min ),
         'break_minutes'        => $break_minutes,
+        'job_break_active'     => $job_break !== null,
+        'needs_short_break_fix' => $job_break !== null && $job_break['needs_fix'],
+        'short_break_standard' => $job_break !== null ? $job_break['standard'] : null,
+        'fixed_break_minutes'  => $job_break !== null ? $job_break['fixed_minutes'] : null,
         'break_master_id'      => $break_master ? (int) $break_master->id : 0,
         'standard_break'       => $standard_minutes,
         'standard_master_id'   => $standard_row ? (int) $standard_row->id : 0,
@@ -619,6 +630,9 @@ function mat_attendance_update_handler() {
         // mat_handle_clockout 内で wp_send_json_* が呼ばれる
 
     } elseif ( $label === '休憩' ) {
+        if ( mat_get_job_break_policy( $emp ) !== null ) {
+            wp_send_json_error( '休憩は職種設定に基づき退勤時に登録します。' );
+        }
         if ( ! $row || is_null( $row->clock_in ) ) {
             wp_send_json_error( '出勤打刻がありません。先に出勤を打刻してください。' );
         }
@@ -712,6 +726,13 @@ function mat_handle_clockout( $emp_master_id, $employee_code ) {
     $rounded_in    = $row->rounded_clock_in
         ?: mat_minutes_to_time_sql( mat_round_in_minutes( mat_parse_time_to_minutes( $row->clock_in ), $units['in'] ) );
 
+    $job_break = mat_resolve_job_break( emp_get_employee_by_code( $employee_code ), $row, $rounded_in, $rounded_out, $_POST['job_break_minutes'] ?? null, true );
+    if ( is_wp_error( $job_break ) ) wp_send_json_error( $job_break->get_error_message() );
+    if ( $job_break !== null ) {
+        $break_minutes = $job_break['minutes'];
+        $break_master = null;
+    }
+
     // ---- 深夜休憩の確定（要件定義書 §6.7）----
     // midnight_span_minutes は該当があれば常にスナップショット保存する。
     // midnight_break_minutes は POST が無ければ既存値（通常はNULL＝未確認）を維持し、事後修正はしない。
@@ -746,7 +767,7 @@ function mat_handle_clockout( $emp_master_id, $employee_code ) {
         'rounded_clock_out'       => $rounded_out,
         'is_overnight'            => $target['is_overnight'] ? 1 : 0,
         'break_minutes'           => $break_minutes,
-        'break_master_id'         => $break_master ? (int) $break_master->id : $row->break_master_id,
+        'break_master_id'         => $job_break !== null ? null : ( $break_master ? (int) $break_master->id : $row->break_master_id ),
         'time_unit'               => $units['in'],
         'clock_in_unit'           => $units['in'],
         'clock_out_unit'          => $units['out'],
@@ -911,6 +932,9 @@ function mat_get_today_status_handler() {
     if ( ! $emp_id ) wp_send_json_error( '社員情報が不正です。' );
     $status = mat_get_today_punch_status( $emp_id );
     $status['today_ymd'] = current_time( 'Y-m-d' );
+    $policy = mat_get_job_break_policy( emp_get_employee_by_id( $emp_id ) );
+    $status['job_break_active'] = $policy !== null;
+    $status['job_break_fallback'] = $policy !== null && $policy['fallback'];
     wp_send_json_success( $status );
 }
 

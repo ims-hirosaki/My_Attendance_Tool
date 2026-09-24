@@ -2,14 +2,14 @@
 /*
 Plugin Name: My Attendance Tool
 Description: 出退勤を記録するツール。employee-manager と連携して動作します。
-Version: 3.5.0
+Version: 3.6.0
 Author: 株式会社Ｉ・Ｍ・Ｓ
 */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 // ===== 定数定義 =====
-define( 'MAT_VERSION',  '3.5.0' );
+define( 'MAT_VERSION',  '3.6.0' );
 define( 'MAT_PATH',     plugin_dir_path( __FILE__ ) );
 define( 'MAT_URL',      plugin_dir_url( __FILE__ ) );
 
@@ -23,6 +23,7 @@ define( 'MAT_WORK_REQUEST_TABLE', $wpdb->prefix . 'mat_work_request' ); // 例�
 
 // ===== ファイル読み込み =====
 require_once MAT_PATH . 'includes/mat-core.php';       // 丸め込み・休憩マスタ・アラートの共通ロジック
+require_once MAT_PATH . 'includes/attendance-policy.php';
 require_once MAT_PATH . 'includes/database-setup.php';
 require_once MAT_PATH . 'includes/ajax-handlers.php';
 require_once MAT_PATH . 'includes/admin-alert-modal.php'; // 履歴／アラート一覧で共用する修正モーダル

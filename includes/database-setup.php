@@ -165,6 +165,11 @@ function mat_create_tables() {
         'mat_midnight_start'          => 1320,
         'mat_midnight_end'            => 1740,
         'mat_midnight_alert_since'    => '',
+        'mat_clockin_alert_enabled'   => 0,
+        'mat_clockin_alert_since'     => '',
+        'mat_show_break_controls'     => 1,
+        'mat_short_break_alert'       => 1,
+        'mat_job_break_rules'         => array(),
     );
     foreach ( $defaults as $key => $value ) {
         if ( get_option( $key ) === false ) {
@@ -294,6 +299,11 @@ function mat_drop_tables() {
         'mat_midnight_start',
         'mat_midnight_end',
         'mat_midnight_alert_since',
+        'mat_clockin_alert_enabled',
+        'mat_clockin_alert_since',
+        'mat_show_break_controls',
+        'mat_short_break_alert',
+        'mat_job_break_rules',
     );
     foreach ( $option_keys as $key ) {
         delete_option( $key );

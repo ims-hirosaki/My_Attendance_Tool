@@ -363,6 +363,7 @@ jQuery(document).ready(function ($) {
             breakMasterId: step ? step.id : 0,
             breakReason: '',
             breakFixed: false,
+            jobBreakMinutes: null,
             overtimeReason: '',
             overnightConfirmed: false,
             midnightBreak: null,
@@ -385,6 +386,7 @@ jQuery(document).ready(function ($) {
             emp_master_id: session.empMasterId,
             employee_code: session.employeeCode,
             break_master_id: clockout.breakMasterId,
+            job_break_minutes: clockout.jobBreakMinutes == null ? '' : clockout.jobBreakMinutes,
             clock_out_override: clockout.override,
             target_date: clockout.targetDate,
             nonce: nonce,
@@ -414,6 +416,14 @@ jQuery(document).ready(function ($) {
                 + 'この退勤を「' + esc(d.target_date_label) + '」の退勤として登録します。よろしいですか？'
             );
             showModal('#mat-overnight-modal', d);
+            return;
+        }
+
+        if (d.needs_short_break_fix) {
+            $('#mat-short-break-summary').text('固定休憩：' + d.fixed_break_minutes + '分 ／ この勤務時間の基準：' + d.short_break_standard + '分');
+            $('#mat-short-break-minutes').val(d.short_break_standard);
+            $('#mat-short-break-error').text('');
+            showModal('#mat-short-break-modal', d);
             return;
         }
 
@@ -465,6 +475,7 @@ jQuery(document).ready(function ($) {
             clock_out_override: clockout.override,
             clock_out_original: clockout.originalOut || '',
             break_master_id: clockout.breakMasterId,
+            job_break_minutes: clockout.jobBreakMinutes == null ? '' : clockout.jobBreakMinutes,
             break_reason: clockout.breakReason,
             overtime_reason: clockout.overtimeReason,
             midnight_break_minutes: clockout.midnightBreak === null ? '' : clockout.midnightBreak,
@@ -487,6 +498,27 @@ jQuery(document).ready(function ($) {
             alert('通信エラーが発生しました。');
         });
     }
+
+    $('#mat-short-break-ok').on('click', function () {
+        var d = $('#mat-short-break-modal').data('prepared') || {};
+        var raw = $('#mat-short-break-minutes').val();
+        var minutes = Number(raw);
+        if (!/^\d+$/.test(raw) || minutes > 1440 || minutes > d.kousoku_minutes || minutes === d.fixed_break_minutes) {
+            $('#mat-short-break-error').text('固定休憩とは異なる、拘束時間以下の休憩時間（0〜1440分）を入力してください。');
+            return;
+        }
+        clockout.jobBreakMinutes = minutes;
+        clockout.breakReason = '';
+        clockout.breakFixed = false;
+        clockout.overtimeReason = '';
+        clockout.midnightBreak = null;
+        $('#mat-short-break-modal').fadeOut(150);
+        prepareClockout();
+    });
+    $('#mat-short-break-cancel').on('click', function () {
+        $('#mat-short-break-modal').fadeOut(150);
+        endClockoutFlow();
+    });
 
     // ---- ① 日跨ぎ ----
     $('#mat-overnight-ok').on('click', function () {
@@ -513,6 +545,7 @@ jQuery(document).ready(function ($) {
         } else {
             // 基準の休憩時間に修正して登録（申請レコードは作らない）
             clockout.breakMasterId = d.standard_master_id || clockout.breakMasterId;
+            if (d.job_break_active) clockout.jobBreakMinutes = d.standard_break;
             clockout.breakFixed = true;
             clockout.breakReason = '';
         }
@@ -656,6 +689,10 @@ jQuery(document).ready(function ($) {
     $('#mat-mnr-fix').on('click', function () {
         var stepId = $(this).data('step-id');
         if (stepId) clockout.breakMasterId = stepId;
+        if (lastMidnightData && lastMidnightData.job_break_active) {
+            var step = breakSteps.find(function(s) { return s.id === stepId; });
+            if (step) clockout.jobBreakMinutes = step.minutes;
+        }
         // 休憩額が変わるため、②③④はすべて再判定させる
         clockout.breakReason = '';
         clockout.breakFixed = false;
@@ -715,6 +752,8 @@ jQuery(document).ready(function ($) {
     function applyPunchButtons(status) {
         if (!status) return;
 
+        $('.mat-break-box').toggle(!status.job_break_active);
+        $('#mat-job-break-warning').toggle(!!status.job_break_fallback);
         var hasClockin = !!status.has_clockin;
         var hasClockout = !!status.has_clockout;
         var isHoliday = !!status.is_holiday;
