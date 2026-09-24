@@ -259,11 +259,16 @@ jQuery(document).ready(function ($) {
     //  インポート実行（チャンク分割）
     // =========================================================
     $('#mat-csv-import-btn').on('click', function () {
-        var onDuplicate = $('input[name="mat_on_duplicate"]:checked').val() || 'skip';
+        var onDuplicate = $('input[name="mat_on_duplicate"]:checked').val() || 'merge';
+        var duplicateLabels = {
+            merge: '入力項目だけ更新（空欄は既存を維持）',
+            skip: 'スキップ',
+            overwrite: '全項目を上書き',
+        };
 
         if (!confirm(
             'インポートを実行します。\n'
-            + '重複レコードの扱い：【' + (onDuplicate === 'skip' ? 'スキップ' : '上書き') + '】\n\n'
+            + '重複レコードの扱い：【' + duplicateLabels[onDuplicate] + '】\n\n'
             + 'よろしいですか？'
         )) return;
 
@@ -340,7 +345,7 @@ jQuery(document).ready(function ($) {
 
         var hasError = result.errors.length > 0;
         var html = '<div class="mat-result-summary">'
-            + '<p>🎉 インポートが完了しました。</p>'
+            + '<p>' + (hasError ? '⚠️ インポート処理が完了しました（エラーあり）。' : '🎉 インポートが完了しました。') + '</p>'
             + '<table class="mat-result-table">'
             + '<tr><th>新規追加</th><td><strong>' + result.inserted + '</strong> 件</td></tr>'
             + '<tr><th>上書き更新</th><td><strong>' + result.updated + '</strong> 件</td></tr>'

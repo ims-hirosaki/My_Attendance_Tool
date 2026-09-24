@@ -22,11 +22,33 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 // =========================================================
 
 /**
- * 勤務時間入力単位（分）。15 / 30 / 60 のいずれか。
+ * 丸め込み単位（分）。0（丸め込みなし）/ 15 / 30 / 60。
  */
 function mat_get_time_unit() {
-	$unit = (int) get_option( 'mat_time_unit', 30 );
-	return in_array( $unit, array( 15, 30, 60 ), true ) ? $unit : 30;
+	$value = get_option( 'mat_time_unit', false );
+	$unit = $value === false ? 30 : (int) $value;
+	return in_array( $unit, array( 0, 15, 30, 60 ), true ) ? $unit : 30;
+}
+
+function mat_get_clock_in_unit() {
+	$legacy = mat_get_time_unit();
+	$unit = (int) get_option( 'mat_clock_in_unit', $legacy );
+	return in_array( $unit, array( 0, 15, 30, 60 ), true ) ? $unit : $legacy;
+}
+
+function mat_get_clock_out_unit() {
+	$legacy = mat_get_time_unit();
+	$unit = (int) get_option( 'mat_clock_out_unit', $legacy );
+	return in_array( $unit, array( 0, 15, 30, 60 ), true ) ? $unit : $legacy;
+}
+
+/** 日次行に保存された単位を優先し、旧データは time_unit、未設定なら現在設定へフォールバックする。 */
+function mat_get_row_rounding_units( $row ) {
+	$row = (object) $row;
+	$legacy = isset( $row->time_unit ) && $row->time_unit !== null ? (int) $row->time_unit : null;
+	$in  = isset( $row->clock_in_unit )  && $row->clock_in_unit  !== null ? (int) $row->clock_in_unit  : ( $legacy !== null ? $legacy : mat_get_clock_in_unit() );
+	$out = isset( $row->clock_out_unit ) && $row->clock_out_unit !== null ? (int) $row->clock_out_unit : ( $legacy !== null ? $legacy : mat_get_clock_out_unit() );
+	return array( 'in' => $in, 'out' => $out );
 }
 
 /**
@@ -145,8 +167,9 @@ function mat_format_minutes_jp_padded( $minutes ) {
  */
 function mat_round_in_minutes( $minutes, $unit = null ) {
 	if ( $minutes === null ) return null;
-	$unit = $unit ? (int) $unit : mat_get_time_unit();
-	if ( $unit <= 0 ) $unit = 30;
+	$unit = $unit === null ? mat_get_clock_in_unit() : (int) $unit;
+	if ( $unit === 0 ) return (int) $minutes;
+	if ( $unit < 0 ) $unit = 30;
 	return (int) ( ceil( (int) $minutes / $unit ) * $unit );
 }
 
@@ -155,8 +178,9 @@ function mat_round_in_minutes( $minutes, $unit = null ) {
  */
 function mat_round_out_minutes( $minutes, $unit = null ) {
 	if ( $minutes === null ) return null;
-	$unit = $unit ? (int) $unit : mat_get_time_unit();
-	if ( $unit <= 0 ) $unit = 30;
+	$unit = $unit === null ? mat_get_clock_out_unit() : (int) $unit;
+	if ( $unit === 0 ) return (int) $minutes;
+	if ( $unit < 0 ) $unit = 30;
 	return (int) ( floor( (int) $minutes / $unit ) * $unit );
 }
 
@@ -751,7 +775,7 @@ function mat_alert_code_to_request_type( $code ) {
  * @param int $daily_id
  * @return object|null 更新後の行
  */
-function mat_recalc_daily_row( $daily_id ) {
+function mat_recalc_daily_row( $daily_id, $override_in_unit = null, $override_out_unit = null ) {
 	global $wpdb;
 	$daily_id = (int) $daily_id;
 
@@ -761,7 +785,9 @@ function mat_recalc_daily_row( $daily_id ) {
 	if ( ! $row ) return null;
 
 	// 打刻時点の単位時間を優先（後から設定変更されても再現可能にする）
-	$unit = ! empty( $row->time_unit ) ? (int) $row->time_unit : mat_get_time_unit();
+	$units = mat_get_row_rounding_units( $row );
+	$in_unit  = $override_in_unit  === null ? $units['in']  : (int) $override_in_unit;
+	$out_unit = $override_out_unit === null ? $units['out'] : (int) $override_out_unit;
 
 	$in_min  = mat_parse_time_to_minutes( $row->clock_in );
 	$out_min = mat_parse_time_to_minutes( $row->clock_out );
@@ -777,8 +803,8 @@ function mat_recalc_daily_row( $daily_id ) {
 		$is_overnight = 0;
 	}
 
-	$rounded_in  = $in_min  === null ? null : mat_minutes_to_time_sql( mat_round_in_minutes( $in_min, $unit ) );
-	$rounded_out = $out_min === null ? null : mat_minutes_to_time_sql( mat_round_out_minutes( $out_min, $unit ) );
+	$rounded_in  = $in_min  === null ? null : mat_minutes_to_time_sql( mat_round_in_minutes( $in_min, $in_unit ) );
+	$rounded_out = $out_min === null ? null : mat_minutes_to_time_sql( mat_round_out_minutes( $out_min, $out_unit ) );
 
 	// 深夜該当時間を丸め値から再計算し、既存の深夜休憩（NULL＝未確認はそのまま維持）を用いて深夜時間を再計算する（要件定義書 §5.1）
 	// 中抜け（Phase 6）が設定されている場合は、その区間を勤務区間から除外して判定する（§12.3）
@@ -793,7 +819,9 @@ function mat_recalc_daily_row( $daily_id ) {
 		'rounded_clock_in'        => $rounded_in,
 		'rounded_clock_out'       => $rounded_out,
 		'is_overnight'            => $is_overnight,
-		'time_unit'               => $unit,
+		'time_unit'               => $in_unit,
+		'clock_in_unit'           => $in_unit,
+		'clock_out_unit'          => $out_unit,
 		'midnight_span_minutes'   => $midnight_span,
 		'midnight_minutes'        => $midnight_minutes,
 	);
@@ -814,6 +842,7 @@ function mat_recalc_daily_row( $daily_id ) {
  */
 function mat_decorate_daily_row( $row, array $requests = array() ) {
 	$row = (object) $row;
+	$units = mat_get_row_rounding_units( $row );
 
 	$rounded_in  = $row->rounded_clock_in  ?? null;
 	$rounded_out = $row->rounded_clock_out ?? null;
@@ -849,6 +878,8 @@ function mat_decorate_daily_row( $row, array $requests = array() ) {
 		'is_overnight'       => (bool) ( $row->is_overnight ?? 0 ),
 		'break_master_id'    => isset( $row->break_master_id ) ? (int) $row->break_master_id : null,
 		'time_unit'          => isset( $row->time_unit ) ? (int) $row->time_unit : null,
+		'clock_in_unit'      => $units['in'],
+		'clock_out_unit'     => $units['out'],
 		'kousoku_minutes'    => $calc['kousoku'],
 		'labor_minutes'      => $calc['labor'],
 		'overtime_minutes'   => $calc['overtime'],

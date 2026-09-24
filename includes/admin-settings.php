@@ -97,9 +97,9 @@ function mat_admin_edit_log_handler() {
     } else {
         $break_minutes = mat_hhmm_to_minutes( $break_hhmm );
 
-        $unit = ( $row && ! empty( $row->time_unit ) ) ? (int) $row->time_unit : mat_get_time_unit();
-        $rounded_in_preview  = $clock_in_min  !== null ? mat_minutes_to_time_sql( mat_round_in_minutes( $clock_in_min, $unit ) )  : null;
-        $rounded_out_preview = $clock_out_min !== null ? mat_minutes_to_time_sql( mat_round_out_minutes( $clock_out_min, $unit ) ) : null;
+        $units = $row ? mat_get_row_rounding_units( $row ) : array( 'in' => mat_get_clock_in_unit(), 'out' => mat_get_clock_out_unit() );
+        $rounded_in_preview  = $clock_in_min  !== null ? mat_minutes_to_time_sql( mat_round_in_minutes( $clock_in_min, $units['in'] ) )  : null;
+        $rounded_out_preview = $clock_out_min !== null ? mat_minutes_to_time_sql( mat_round_out_minutes( $clock_out_min, $units['out'] ) ) : null;
 
         // ---- 中抜け（要件定義書 §12.4）----
         $break_out_enabled = ( ( $_POST['break_out_enabled'] ?? '0' ) === '1' );
@@ -427,6 +427,8 @@ function mat_history_page_render() {
                                             data-id="<?php echo esc_attr( $day['id'] ); ?>"
                                             data-in="<?php echo esc_attr( $day['in'] ?? '' ); ?>"
                                             data-out="<?php echo esc_attr( $day['out'] ?? '' ); ?>"
+                                            data-clock-in-unit="<?php echo esc_attr( $day['clock_in_unit'] ?? mat_get_clock_in_unit() ); ?>"
+                                            data-clock-out-unit="<?php echo esc_attr( $day['clock_out_unit'] ?? mat_get_clock_out_unit() ); ?>"
                                             data-break="<?php echo esc_attr( $day['break'] ?? '00:00' ); ?>"
                                             data-notes="<?php echo esc_attr( $note_text ); ?>"
                                             data-holiday="<?php echo $is_holiday ? '1' : '0'; ?>"
@@ -539,6 +541,8 @@ function mat_history_page_render() {
             echo esc_js( mat_minutes_to_hm( $w['start'] ) . ' 〜 ' . mat_minutes_to_hm( $w['end'] ) );
         ?>';
         var matOvertimeThreshold = <?php echo (int) mat_get_overtime_threshold(); ?>;
+        var currentEditClockInUnit = <?php echo (int) mat_get_clock_in_unit(); ?>;
+        var currentEditClockOutUnit = <?php echo (int) mat_get_clock_out_unit(); ?>;
 
         function matParseHM(s) {
             var m = /^(\d{1,3}):(\d{2})$/.exec($.trim(s || ''));
@@ -599,6 +603,8 @@ function mat_history_page_render() {
                 $('#edit-break-out-minutes').text('--');
                 return;
             }
+            inMin  = currentEditClockInUnit === 0 ? inMin : Math.ceil(inMin / currentEditClockInUnit) * currentEditClockInUnit;
+            outMin = currentEditClockOutUnit === 0 ? outMin : Math.floor(outMin / currentEditClockOutUnit) * currentEditClockOutUnit;
             if (outMin <= inMin) outMin += 1440;
 
             var boValid = (boEnabled && boStartMin !== null && boEndMin !== null
@@ -743,6 +749,10 @@ function mat_history_page_render() {
 
             $('#edit-in').val($(this).data('in') || '');
             $('#edit-out').val($(this).data('out') || '');
+            currentEditClockInUnit = parseInt($(this).attr('data-clock-in-unit'), 10);
+            currentEditClockOutUnit = parseInt($(this).attr('data-clock-out-unit'), 10);
+            if (isNaN(currentEditClockInUnit)) currentEditClockInUnit = <?php echo (int) mat_get_clock_in_unit(); ?>;
+            if (isNaN(currentEditClockOutUnit)) currentEditClockOutUnit = <?php echo (int) mat_get_clock_out_unit(); ?>;
             $('#edit-break').val($(this).data('break') || '00:00');
             $('#edit-notes').val($(this).data('notes') || '');
             var midnightBreak = $(this).data('midnight-break');
