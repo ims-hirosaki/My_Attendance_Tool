@@ -794,6 +794,7 @@ input[type="date"].mat-input {
 /* 退勤ポップアップは行数が多いため既定より広めにする */
 #mat-overnight-modal .mat-modal-inner,
 #mat-break-exception-modal .mat-modal-inner,
+#mat-short-break-modal .mat-modal-inner,
 #mat-overtime-modal .mat-modal-inner,
 #mat-midnight-modal .mat-modal-inner,
 #mat-midnight-rescue-modal .mat-modal-inner {
@@ -899,6 +900,7 @@ textarea.mat-radio-child {
 @media (max-width: 480px) {
     #mat-overnight-modal .mat-modal-inner,
     #mat-break-exception-modal .mat-modal-inner,
+    #mat-short-break-modal .mat-modal-inner,
     #mat-overtime-modal .mat-modal-inner,
     #mat-midnight-modal .mat-modal-inner,
     #mat-midnight-rescue-modal .mat-modal-inner {

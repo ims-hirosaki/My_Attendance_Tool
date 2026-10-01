@@ -45,6 +45,7 @@ function mat_admin_get_alert_row_handler() {
  */
 function mat_request_type_labels() {
 	return array(
+		'clockin_exception' => '例外出勤',
 		'break_exception' => '例外休憩',
 		'overtime'         => '残業',
 		'midnight_break'   => '深夜休憩',
@@ -72,7 +73,7 @@ function mat_build_alert_modal_payload( $row ) {
 
 	$labels   = mat_request_type_labels();
 	$sections = array();
-	foreach ( array( 'break_exception', 'overtime', 'midnight_break' ) as $type ) {
+	foreach ( array( 'break_exception', 'overtime', 'midnight_break', 'clockin_exception' ) as $type ) {
 		if ( ! in_array( $type, $relevant_types, true ) ) continue;
 		$req = $requests[ $type ] ?? null;
 		$sections[] = array(
@@ -232,11 +233,12 @@ function mat_admin_save_alert_fix_handler() {
 	$types = array_unique( array_merge( $types, array_keys( $requests ), array_keys( $statuses ) ) );
 
 	foreach ( $types as $type ) {
-		if ( ! in_array( $type, array( 'break_exception', 'overtime', 'midnight_break' ), true ) ) continue;
+		if ( ! in_array( $type, array( 'break_exception', 'overtime', 'midnight_break', 'clockin_exception' ), true ) ) continue;
 
 		$s        = is_array( $statuses[ $type ] ?? null ) ? $statuses[ $type ] : array();
 		$review   = intval( $s['review_status']   ?? 0 );
 		$approval = intval( $s['approval_status'] ?? 0 );
+		if ( $type === 'clockin_exception' ) $review = 0;
 		$comment  = sanitize_textarea_field( $s['admin_comment'] ?? '' );
 
 		if ( ! in_array( $review, array( 0, 1, 2, 3 ), true ) )   $review   = 0;
@@ -301,7 +303,7 @@ function mat_render_alert_badges( array $alerts ) {
 function mat_render_status_badges( array $requests ) {
 	$labels = mat_request_type_labels();
 	$active = array();
-	foreach ( array( 'break_exception', 'overtime', 'midnight_break' ) as $type ) {
+	foreach ( array( 'break_exception', 'overtime', 'midnight_break', 'clockin_exception' ) as $type ) {
 		$req = $requests[ $type ] ?? null;
 		if ( $req && ( (int) $req->review_status > 0 || (int) $req->approval_status > 0 ) ) {
 			$active[ $type ] = $req;
@@ -582,7 +584,7 @@ function mat_render_alert_modal() {
 			}
 
 			html += '<table class="form-table" style="margin:0;">';
-			html += '<tr><th style="width:100px;">対応ステータス</th><td>' + selectHtml('mat-alert-review', reviewOptions, s.review_status) + '</td></tr>';
+			if (s.type !== 'clockin_exception') html += '<tr><th style="width:100px;">対応ステータス</th><td>' + selectHtml('mat-alert-review', reviewOptions, s.review_status) + '</td></tr>';
 			html += '<tr><th>承認ステータス</th><td>' + selectHtml('mat-alert-approval', approvalOptions, s.approval_status) + '</td></tr>';
 			html += '<tr><th>管理者コメント</th><td><textarea class="mat-alert-comment large-text" rows="2">' + $('<div>').text(s.admin_comment).html() + '</textarea></td></tr>';
 			html += '</table>';

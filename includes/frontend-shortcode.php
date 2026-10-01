@@ -153,7 +153,8 @@ function mat_shortcode_render() {
             </div>
 
             <!-- 4. 休憩（休憩マスタ連動の離散スライダー） -->
-            <div class="mat-break-box">
+            <p id="mat-job-break-warning" class="mat-error" style="display:none;" role="status">職種が未登録です。管理者にお伝えください。</p>
+            <div class="mat-break-box" <?php if ( ! get_option( 'mat_show_break_controls', 1 ) ) echo 'style="display:none;"'; ?>>
                 <div class="mat-break-header">
                     <span>休憩時間</span>
                     <span class="mat-break-value" id="mat-break-display">--</span>
@@ -336,6 +337,20 @@ function mat_shortcode_render() {
                 <div class="mat-modal-actions">
                     <button type="button" id="mat-be-cancel" class="mat-btn mat-btn-secondary">キャンセル</button>
                     <button type="button" id="mat-be-ok" class="mat-btn mat-btn-primary">登録</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="mat-modal" id="mat-short-break-modal" style="display:none;">
+            <div class="mat-modal-inner">
+                <h3 class="mat-modal-title">勤務時間に対して固定休憩が長くなっています</h3>
+                <p id="mat-short-break-summary"></p>
+                <label>実際の休憩時間（分）<input type="number" id="mat-short-break-minutes" class="mat-input" min="0" max="1440" step="1"></label>
+                <p class="mat-hint">実際の休憩時間へ修正してから退勤してください。</p>
+                <p class="mat-error" id="mat-short-break-error"></p>
+                <div class="mat-modal-actions">
+                    <button type="button" id="mat-short-break-cancel" class="mat-btn mat-btn-secondary">キャンセル</button>
+                    <button type="button" id="mat-short-break-ok" class="mat-btn mat-btn-primary">休憩時間を修正して退勤</button>
                 </div>
             </div>
         </div>

@@ -605,7 +605,7 @@ function mat_upsert_work_request( array $args ) {
 
 	$daily_id = (int) ( $args['daily_id'] ?? 0 );
 	$type     = (string) ( $args['request_type'] ?? '' );
-	if ( $daily_id <= 0 || ! in_array( $type, array( 'break_exception', 'overtime', 'midnight_break' ), true ) ) {
+	if ( $daily_id <= 0 || ! in_array( $type, array( 'break_exception', 'overtime', 'midnight_break', 'clockin_exception' ), true ) ) {
 		return false;
 	}
 
@@ -685,6 +685,21 @@ function mat_build_row_alerts( $row, array $requests = array() ) {
 	$standard = mat_get_standard_break_minutes( $calc['kousoku'] );
 	$alerts   = array();
 
+	$since = (string) get_option( 'mat_clockin_alert_since', '' );
+	if ( get_option( 'mat_clockin_alert_enabled', 0 ) && $since !== ''
+		&& (string) ( $row->work_date ?? '' ) >= $since && ! empty( $row->clock_in ) ) {
+		$units = mat_get_row_rounding_units( $row );
+		$start = ! empty( $row->rounded_clock_in ) ? $row->rounded_clock_in : mat_round_clock_in( $row->clock_in, $units['in'] );
+		if ( mat_parse_time_to_minutes( $start ) !== 480 ) {
+			$req = $requests['clockin_exception'] ?? null;
+			$alerts[] = array(
+				'code' => 'CLOCKIN_IRREGULAR', 'color' => 'yellow',
+				'label' => '8時以外の出勤打刻があります。',
+				'resolved' => $req && (int) $req->approval_status === 2,
+			);
+		}
+	}
+
 	// ① 休憩が基準外
 	if ( $standard !== null && (int) ( $row->break_minutes ?? 0 ) !== (int) $standard ) {
 		$req = $requests['break_exception'] ?? null;
@@ -758,6 +773,7 @@ function mat_alerts_has_unresolved( array $alerts ) {
  * 種別ごとのフィルタ・ステータス表示で使用する（要件定義書 §7.3・§7.5）。
  */
 function mat_alert_code_to_request_type( $code ) {
+	if ( $code === 'CLOCKIN_IRREGULAR' ) return 'clockin_exception';
 	if ( $code === 'BREAK_IRREGULAR' ) return 'break_exception';
 	if ( in_array( $code, array( 'OVERTIME_REQUESTED', 'OVERTIME_NO_REQUEST' ), true ) ) return 'overtime';
 	if ( in_array( $code, array( 'MIDNIGHT_REQUESTED', 'MIDNIGHT_NO_REQUEST' ), true ) ) return 'midnight_break';

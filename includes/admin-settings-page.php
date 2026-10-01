@@ -45,6 +45,12 @@ function mat_save_settings_handler() {
     }
     check_admin_referer( 'mat_save_settings' );
 
+    $policy_settings = mat_validate_policy_settings( wp_unslash( $_POST ) );
+    if ( is_wp_error( $policy_settings ) ) {
+        wp_die( esc_html( $policy_settings->get_error_message() ), '設定エラー', array( 'back_link' => true ) );
+    }
+    foreach ( $policy_settings as $key => $value ) update_option( $key, $value );
+
     update_option( 'mat_use_password_auth',        isset( $_POST['mat_use_password_auth'] )        ? 1 : 0 );
     update_option( 'mat_use_paid_leave_approval',   isset( $_POST['mat_use_paid_leave_approval'] )   ? 1 : 0 );
     update_option( 'mat_show_paid_leave_request',   isset( $_POST['mat_show_paid_leave_request'] )   ? 1 : 0 );
@@ -256,6 +262,7 @@ function mat_settings_page_render() {
             <input type="hidden" name="action" value="mat_save_settings">
 
             <table class="form-table" role="presentation">
+                <?php mat_render_policy_settings(); ?>
 
                 <!-- パスワード認証 -->
                 <tr>
