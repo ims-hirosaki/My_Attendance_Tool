@@ -4,8 +4,10 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 /**
  * 従業員認証管理ページ
  */
-add_action( 'admin_menu', 'mat_register_auth_management_page', 15 );
+add_action( 'admin_menu', 'mat_register_auth_management_page', 14 );
 function mat_register_auth_management_page() {
+    // パスワード認証が無効の場合は管理メニューを表示しない
+    if ( ! get_option( 'mat_use_password_auth', 1 ) ) return;
     add_submenu_page(
         'my-attendance-settings',
         '従業員認証管理',

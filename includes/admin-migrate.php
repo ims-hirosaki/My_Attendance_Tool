@@ -18,6 +18,8 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 add_action( 'admin_menu', 'mat_register_migrate_menu', 99 );
 function mat_register_migrate_menu() {
+    // DB移行は不要になったためメニューを表示しない
+    return;
     add_submenu_page(
         'my-attendance-settings',
         'DB移行ツール',
