@@ -30,7 +30,7 @@ function mat_register_admin_menu() {
         'dashicons-clock', 30
     );
     add_submenu_page(
-        'my-attendance-settings', '打刻', '打刻', 'access_custom_plugins',
+        'my-attendance-settings', '打刻管理', '打刻管理', 'access_custom_plugins',
         'my-attendance-settings', 'mat_history_page_render'
     );
 }

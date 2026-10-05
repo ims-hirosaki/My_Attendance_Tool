@@ -15,12 +15,12 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 //  メニュー登録
 // =========================================================
 
-add_action( 'admin_menu', 'mat_register_alert_list_menu', 21 );
+add_action( 'admin_menu', 'mat_register_alert_list_menu', 12 );
 function mat_register_alert_list_menu() {
 	add_submenu_page(
 		'my-attendance-settings',
 		'アラート一覧',
-		'⚠ アラート一覧',
+		'アラート一覧',
 		'access_custom_plugins',
 		'mat-alert-list',
 		'mat_alert_list_page_render'

@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 /**
  * 設定画面の登録・処理
  */
-add_action( 'admin_menu', 'mat_register_settings_page', 20 );
+add_action( 'admin_menu', 'mat_register_settings_page', 13 );
 function mat_register_settings_page() {
     add_submenu_page(
         'my-attendance-settings',
