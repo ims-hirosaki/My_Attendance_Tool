@@ -106,9 +106,7 @@ function mat_render_break_master_section() {
 		$rows = mat_get_break_master();
 	}
 	?>
-	<hr style="margin:32px 0 24px;">
-
-	<h2 id="mat-break-master">🍱 休憩時間マスタ</h2>
+	<h2 id="mat-break-master" style="margin-top:24px;">🍱 休憩時間マスタ</h2>
 
 	<?php if ( isset( $_GET['break_saved'] ) ) : ?>
 		<div class="notice notice-success is-dismissible"><p>休憩時間マスタを保存しました。</p></div>
@@ -126,11 +124,11 @@ function mat_render_break_master_section() {
 	<?php endif; ?>
 
 	<p class="description" style="max-width:820px;">
-		フロントエンドの休憩スライダーの選択肢と、拘束時間から自動判定される「基準休憩」を定義します。<br>
-		「自動判定」ONの行は、拘束時間（終業−始業）の下限以上・上限未満のときに適用されます。
-		<strong>0分〜上限なしまでを隙間なく・重複なくカバー</strong>してください。<br>
-		「自動判定」OFFの行はスライダーの選択肢としてのみ機能します（フリーラベル行）。
-	</p>
+			「勤務時間が○時間のとき、休憩は○分」という基準の表です。社員の休憩スライダーの選択肢と、休憩アラートの基準として使われます。<br>
+			<strong>「自動判定」にチェックを入れた行</strong>は、拘束時間（終業−始業）が「下限以上・上限未満」のときの基準休憩になります。
+			<strong>0分から上限なしまで、すき間も重なりもなく</strong>並べてください。<br>
+			「自動判定」にチェックを入れない行は、社員の休憩スライダーの選択肢として表示されるだけです（基準にはなりません）。
+		</p>
 
 	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" id="mat-break-master-form">
 		<?php wp_nonce_field( 'mat_save_break_master' ); ?>
